@@ -1,0 +1,31 @@
+{
+	"__default__": {
+		"partition": "quick",
+		"time": "4:00:00",
+		"mem": "16g",
+		"cpus-per-task": "1",
+		"output": "00log/{rule}_{wildcards}.out",
+		"error": "00log/{rule}_{wildcards}.err",
+		"extra": "",
+		"name": "{rule}.job"
+	},
+
+	"align_minimap2": {
+		"partition": "norm",
+		"time": "24:00:00",
+		"mem": "60G",
+		"cpus-per-task": "16"		
+	},
+	"TranscriptClean": {
+		"partition": "norm",
+		"time": "24:00:00",
+		"mem": "60G",
+		"cpus-per-task": "16"
+	},
+	"run_talon": {
+		"partition": "norm",
+		"time": "24:00:00",
+		"mem": "60G",
+		"cpus-per-task": "16"		
+	}
+}

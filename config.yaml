@@ -1,0 +1,10 @@
+st_brain_outdir: /data/swamyvs/eyeintegration_splicing/testing/stringtie_build_testing/st_bt_samples/TPM_0.1_isoform_0.01_/
+subtissueFile: ref/subtissues.txt
+tissueFile: ref/tissues.txt
+ref_GTF: ref/gencode_comp_ano.gtf
+working_dir: /data/swamyvs/pacbio_testing
+sample_file: sampleTablePacbio.tsv
+pacbiosamples: pacBioSample.tsv
+ref_genome: ref/gencode_genome.fa
+variants: ref/encode_variants.vcf.gz
+chr_names: ref/chr_fasta_entries.txt
