@@ -1,0 +1,3 @@
+sample	tissue	subtissue	origin	location
+RPE_D42_small	RPE	RPE_Fetal.Tissue	hufnagel_ipsc	RNA_RPE_D42_small_frag.flnc.fastq.gz
+RPE_D42_large	RPE	RPE_Fetal.Tissue	hufnagel_ipsc	RNA_RPE_D42_large_frag.flnc.fastq.gz
