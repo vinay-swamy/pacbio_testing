@@ -17,10 +17,10 @@
 		"cpus-per-task": "16"		
 	},
 	"TranscriptClean": {
-		"partition": "norm",
-		"time": "24:00:00",
-		"mem": "60G",
-		"cpus-per-task": "16"
+		"partition": "largemem",
+		"time": "72:00:00",
+		"mem": "400G",
+		"cpus-per-task": "64"
 	},
 	"run_talon": {
 		"partition": "quick",
