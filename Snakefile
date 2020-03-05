@@ -38,6 +38,15 @@ def get_stringtie_libflag(sample, sample_dict):
         return ''
 
 
+def salmon_input(id,sample_dict,fql):
+    paired=sample_dict[id]['paired']
+    id= fql + 'fastq_files/' + id
+    if paired:
+        return('-1 {s}_1.fastq.gz -2 {s}_2.fastq.gz'.format(s=id))
+    else:
+        return('-r {}.fastq.gz'.format(id))
+
+
 ########## long read sample setup
 working_dir = config['working_dir']
 lr_sample_file = config['lr_sample_file']
@@ -65,7 +74,7 @@ bam_path = config['bam_path']
 STARindex = bam_path + 'ref/STARindex'
 
 ########## software
-#salmon_version = config['salmon_version']
+salmon_version = config['salmon_version']
 stringtie_version = config['stringtie_version']
 #R_version = config['R_version']
 samtools_version = config['samtools_version']
@@ -85,9 +94,10 @@ minimap2_version = config['minimap2_version']
 rule all:
     # , expand('data/fasta/flnc/{sample}_flnc.fa', sample=pb_samplenames)
     input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
-        expand('data/combined_gtfs/all_RPE_{type}.combined.gtf', type=['strict', 'loose'])
+        expand('data/combined_gtfs/all_RPE_{type}.combined.gtf', type=['strict', 'loose']),
+        expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
 
-
+#### build transcriptomes 
 rule run_stringtie:
     input: 
         bam_path + 'STARbams/{sample}/Sorted.out.bam'
@@ -101,9 +111,6 @@ rule run_stringtie:
         '''
 
 
-'''
-****PART 2**** build Transcriptome, and process
-'''
 rule run_scallop:
     input: bam_path + 'STARbams/{sample}/Sorted.out.bam'
     params: pfx = lambda wildcards: f'data/scallop/{wildcards.sample}'
@@ -117,9 +124,45 @@ rule run_scallop:
         '''
 
 
-#gffread v0.9.12.Linux_x86_64/
+### get reference transcript quantification
+rule make_tx_fasta:
+    input: gtf = ref_GTF
+    output: 'ref/gencode_comp_ano_tx.fa'
+    shell:
+        '''
+        {bam_path}/gffread/gffread -w {output} -g {ref_genome}  {input.gtf}
+        '''
+
+rule build_salmon_index:
+    input: 'ref/gencode_comp_ano_tx.fa'
+    output: directory('data/salmon_indices/gencode_comp_ano')
+    shell:
+        '''
+        module load {salmon_version}
+        salmon index -t {input} -i {output} 
+        '''
+
+rule run_salmon:
+    input: 
+        fastqs=lambda wildcards: [sr_fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.sampleID),sr_fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.sampleID)] if sr_sample_dict[wildcards.sampleID]['paired'] else sr_fql+'fastq_files/{}.fastq.gz'.format(wildcards.sampleID),
+        index='data/salmon_indices/gencode_comp_ano'
+    params: 
+        cmd=lambda wildcards: salmon_input(wildcards.sampleID,sr_sample_dict,sr_fql),\
+        outdir=lambda wildcards: f'data/salmon_quant/{ wildcards.sampleID}/'
+    output: 
+        'data/salmon_quant/{sampleID}/quant.sf'
+    shell:
+        '''
+        id={wildcards.sampleID}
+        module load {salmon_version}
+        salmon quant -p 8 -i {input.index} -l A --gcBias --seqBias  --validateMappings {params.cmd} -o {params.outdir}
+        '''
 
 
+
+
+
+#####long read stuff
 rule clean_genome:
     input: ref_genome
     output: 'ref/gencode_genome_clean.fa'
@@ -260,7 +303,18 @@ rule run_talon:
             --tmpdir {wildcards.tissue}_talon_tmp/ \
             --o {params.res_outdir}
         
-        talon_create_GTF --db {input.db} --build {input.genome} --annot {params.prefix} --o {params.gtf_outfix}
+        talon_create_GTF \
+            --db {input.db} \
+            --build {input.genome} \
+            --annot {params.prefix} \
+            --o {params.gtf_outfix}
+        
+        talon_abundance \
+            --db {input.db} \
+            --build {input.genome} \
+            --annot {params.prefix} \
+            --o {param.res_outdir}
+        
         rm -rf {wildcards.tissue}_talon_tmp/ 
         '''
 

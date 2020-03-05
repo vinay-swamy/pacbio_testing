@@ -19,3 +19,4 @@ sr_sampleFile: 'sampleTableRPE_V2.tsv'
 minimap2_version: minimap2/2.17
 samtools_version: 'samtools/1.9'
 gffcompare_version: 'gffcompare/0.11.2'
+salmon_version: 'salmon/1.0.0'
