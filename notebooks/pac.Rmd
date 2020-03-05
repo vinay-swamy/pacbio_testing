@@ -1,0 +1,364 @@
+---
+title: "RPE PacBio Sequencing results"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r setup}
+knitr::opts_knit$set(root.dir = '/data/swamyvs/pacbio_testing/')
+```
+
+
+I'm comparing Pacbio data to Stringtie2 and Scallop [kingsford lab txome constructer](https://github.com/Kingsford-Group/scallop) because I needed a way to figure out the library type for the samples ( fr-firststrand/ fr-secondstrand ), and scallop does that automatically so I decided to add it in to this analysis
+
+Long read Pipeline: align(minimap2) > clean( [TranscriptClean](https://github.com/dewyman/TranscriptClean) ) > determine isoforms( [talon](https://github.com/dewyman/TALON) )
+
+minimum transcript length in talon: 300bp
+minimum transcript length in stringtie: 200bp
+minimum transcript length in scallop: varies based on number of exons, but smallest possible is 200bp
+Despite the minimum transcript length, stringtie allows for smaller ones and I'm not entirely sure why
+
+both scallop and stringtie use coverage filters when contructing transcripts, but they are very low - avg 1X coverage for a multi exon transcript, 4X for a single exon.) Right now there is no filtering in the talon set, so every distinct clean read is considered a transcript.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(data.table)
+library(UpSetR)
+library(RBedtools)
+source('~/scripts/R_raincloud.R')
+nm_col_clean <- function(col){
+    raw_name <- col %>% .[.!='-'] %>% .[!grepl('ENST', .)] %>% head
+    name=raw_name %>% str_replace_all('XLOC_\\d+\\|','') %>% 
+        str_split('\\.\\d|:|\\|') %>% .[[1]] %>% .[2] %>% 
+        str_split('_MSTRG|_\\d+$') %>% .[[1]] %>% .[1]
+    return(name)
+}
+
+
+read_trackfile <- function(file){
+    track_tab <- data.table::fread(file, header = F, sep='\t') %>% as_tibble
+    colnames(track_tab) <- c('transcript_id', 'gene_id','refid','code', apply(track_tab[,-(1:4)], 2, nm_col_clean))
+    colnames(track_tab)[ncol(track_tab)] <- 'pacbio'
+    det_df <- apply(track_tab[,-(1:4)],2, function(x) x!='-') %>% as_tibble 
+    det_df <- det_df %>% 
+        mutate(num_det=rowSums(det_df) ) %>%   
+        select(num_det, everything()) 
+    
+    bind_cols(track_tab[,1:4],det_df)  %>% 
+        mutate(ref_gene_name = str_split(refid, '\\|') %>% sapply(function(x)x[1]),
+                ref_transcript_id = str_split(refid,'\\|') %>% sapply(function(x)x[2])  ) %>% 
+        select('transcript_id', 'gene_id', 'code', 'ref_gene_name', 'ref_transcript_id', 'num_det', everything())
+         
+}
+
+
+# 
+# 
+# sample_table <- read_tsv('sampleTableRPE_V2.tsv') %>% filter(origin == 'true_RPE')
+# #rpe_strict_gtf <- rtracklayer::readGFF('data/combined_gtfs/all_RPE_strict.combined.gtf')
+# rpe_loose_gtf <- rtracklayer::readGFF('data/combined_gtfs/all_RPE_loose.combined.gtf')
+# #rpe_strict_track <-read_trackfile('data/combined_gtfs/all_RPE_strict.tracking')
+# rpe_loose_track <- read_trackfile('data/combined_gtfs/all_RPE_loose.tracking')
+# 
+# pb_rpe_short_lengths <- data.table::fread('data/clean_sams/RPE_Fetal.Tissue/RPE_D42_small_lengths.csv',col.names = c('id', 'length')) %>%
+#     mutate(library='short')
+# pb_rpe_long_lengths <- data.table::fread('data/clean_sams/RPE_Fetal.Tissue/RPE_D42_large_lengths.csv',col.names = c('id', 'length')) %>% 
+#     mutate(library='long')
+
+# gtf <- rpe_loose_gtf
+# track <- rpe_loose_track
+# stringtie_transcripts <- track %>% select(contains('st_')) %>% rowSums(.) %>% {. > 0} %>% {filter(track, .) } %>%
+#     pull(transcript_id)
+# scallop_transcripts <- track %>% select(contains('sp_')) %>% rowSums(.) %>% {. > 0} %>% {filter(track, .) } %>%
+#     pull(transcript_id)
+# pacbio_transcripts <- track %>% filter(.$pacbio) %>% pull(transcript_id)
+# length_df <- gtf %>% filter(type == 'exon') %>%
+#     select(seqid,strand, start, end, transcript_id) %>% 
+#     mutate(ex_length=end-start) %>% 
+#     group_by(transcript_id) %>% 
+#     summarise(length=sum(ex_length) + n() ) %>% 
+#     mutate(in_stringtie=transcript_id %in% stringtie_transcripts ,
+#            in_scallop=transcript_id %in% scallop_transcripts, 
+#            in_pacbio=transcript_id %in% pacbio_transcripts,
+#            build_type= case_when( in_stringtie  ~ 'stringtie', 
+#                                   in_scallop   ~ 'scallop' , 
+#                                   in_pacbio   ~ 'pacbio'),
+#            intersection_case = case_when( in_stringtie & in_scallop & in_pacbio ~ 'all',
+#                                           in_stringtie & in_scallop & !in_pacbio ~ 'stringtie-scallop',
+#                                           in_stringtie & !in_scallop & in_pacbio ~ 'stringtie-pacbio',
+#                                           !in_stringtie & in_scallop & in_pacbio ~ 'scallop-pacbio',
+#                                           in_stringtie & !in_scallop & !in_pacbio ~ 'stringtie',
+#                                           !in_stringtie & in_scallop & !in_pacbio ~ 'scallop',
+#                                           !in_stringtie & !in_scallop & in_pacbio ~ 'pacbio')
+#            
+#            )
+# 
+
+load('testing/lr_ws.Rdata')
+
+```
+
+Pacbio short and long library types; there are 4.7 million reads in the short set, and 4.0 million reads in the long set 
+
+```{r}
+pb_length_df <- bind_rows(pb_rpe_long_lengths, pb_rpe_short_lengths)
+ggplot(data=pb_length_df, aes(x=library, y=length, color = library, fill=library)) + 
+    geom_violin() + 
+    geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK")+ 
+    ylab('read lengths')+
+    xlab('library type') + 
+    ggtitle('Distribution of read lengths in PacBio Libraries')+
+    theme_minimal()
+```
+
+
+pretty similar distributions for the two. `r sum(pb_length_df$length < 300)` are less than 300bp, so not missing too much with the current talon minimum transcript length
+
+All gtfs from stringtie, scallop and pacbio are merged into a single gtf, using a loose merge in gffcompare ( transcripts are considered the same if all introns match, but ignores differences in transcriptional start/end site ) 
+
+
+```{r echo=FALSE}
+#make converter tabs for each build to tcons id 
+
+# library(parallel)
+# process_columns <- function(tab,col_name){
+#     print(col_name)
+#     tab <- tab %>% filter( (!! rlang::sym(col_name)) != '-')
+#     col <- tab %>% pull(!!col_name)
+#     name_col <- tab %>% pull(transcript_id)
+#     det <- suppressWarnings(str_split(col, ':|\\|'))
+#     z <- '
+#     most of the oIds have a 1:1 mapping to tx ids, so split into 2 chunks for faster run time, like a lot faster
+#     _s denotes simple case, _c dentotes complex case
+#     '
+# 
+#     d_lengths <- sapply(det, length)
+#     base <- min(d_lengths)
+#     simple <- d_lengths == base
+#     det_s <- det[simple]
+#     name_col_s <- name_col[simple]
+#     tx_simple <-  lapply(1:length(det_s), function(i)  det_s[[i]][3] %>%
+#                 c(name_col_s[i], .)) %>%
+#          do.call(rbind, .) %>% as.data.frame(stringsAsFactors=F)
+#     colnames(tx_simple) <- c('transcript_id', col_name)
+#     #%>% rename(!!col_name:=oId) %>% distinct
+#     tx_comp=data.frame()
+#     if(sum(!simple) > 0){
+#         det_c <- det[!simple]
+#         name_col_c <- name_col[!simple]
+# 
+#         tx_comp <- lapply(1:length(det_c), function(i)  det_c[[i]][-1] %>%
+#                                 .[grepl('MSTRG\\.\\d+\\.\\d+', .) | grepl('ENST', .)] %>%
+#                                 {tibble(transcript_id=rep(name_col_c[i], length(.)),oId= . )}) %>%
+#             bind_rows() %>% rename(!!col_name:=oId) %>% distinct
+#         }
+#     return(list(simple=tx_simple, comp=tx_comp))
+# }
+# 
+# track_tab <- data.table::fread('data/combined_gtfs/all_RPE_loose.tracking', header = F, sep='\t') %>% as_tibble
+# colnames(track_tab) <- c('transcript_id', 'gene_id','refid','code', apply(track_tab[,-(1:4)], 2, nm_col_clean))
+# colnames(track_tab)[ncol(track_tab)] <- 'pacbio'
+# 
+# cn <- colnames(track_tab)[-(1:4)]
+# tcons2mstrg <- mclapply(cn, function(col) process_columns(track_tab,col), mc.cores = 36)
+# tc2mstrg_simple <- lapply(tcons2mstrg, function(x) x[['simple']]) %>% reduce(full_join)
+# save(tc2mstrg_simple, file = 'testing/all_rpe_loose_tc2m_simple.Rdata')
+
+load('testing/all_rpe_loose_tc2m_simple.Rdata')
+```
+
+
+```{r, fig.height=8, fig.width=10}
+#outliers are causing problems, so remove the top 100 longest transcripts to mkae plotting easier 
+max_tx_length <- length_df %>% arrange(length) %>% tail(100) %>% pull(length) %>% min 
+
+all_length_df <- bind_rows(filter(length_df, in_stringtie) %>% mutate(build_type='stringtie'), 
+                           filter(length_df, in_scallop) %>% mutate(build_type='scallop'), 
+                           filter(length_df, in_pacbio) %>% mutate(build_type='pacbio')
+                           )
+total_tx <- all_length_df %>% group_by(build_type) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
+
+
+ggplot(data=all_length_df, aes(x=build_type, y=length, color = build_type, fill=build_type)) + 
+    geom_violin()+
+    geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK") + 
+    geom_label( data = total_tx,aes(label=count),fill='WHITE', colour='BLACK', y=max_tx_length ) + 
+    geom_hline(yintercept = 300, color='red') +
+    ylab('transcript lengths')+
+    xlab('build type') + 
+    ggtitle('Length distributions of transcripts in pacbio and constructed transcriptoomes')+
+    theme_minimal()
+```
+
+the red line is at 300bp, which is the minimum tx length in the pacbio set 
+
+There are `r sum(length_df$length < 300)` transcripts less than 300bp in this combined set so off the bat there is bias to smaller transcripts in the short read sets and looks like pacbio is better at obtaining longer transcripts which is expected. Roughly ~300K of the pacbio transcripts are incomplete splice matches, or ISM's, which are transcripts that are exact subsets of a larger known transcripts ( equivalent to the `c` code in gffcompare ), but not going to deal with them just yet 
+
+
+upset of transcript construction 
+
+```{r echo = FALSE}
+
+
+
+usl <- list(pacbio=pacbio_transcripts, stringtie=stringtie_transcripts, scallop=scallop_transcripts)
+upset(fromList(usl))
+
+```
+
+So there's less agreement between than one would hope 
+
+
+
+```{r, fig.width=13}
+total_tx <- length_df %>% group_by(intersection_case) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
+ggplot(data=length_df, aes(x=intersection_case, y=length, color = intersection_case, fill=intersection_case)) + 
+    geom_violin()+
+    geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK") + 
+    geom_label( data = total_tx,aes(label=count),fill='WHITE', colour='BLACK', y=max_tx_length ) + 
+    geom_hline(yintercept = 300, color='red') +
+    ylab('transcript lengths')+
+    xlab('build type') + 
+    ggtitle('length distributions of transcripts for set intersections\n(all transcripts)') +
+    theme_minimal()
+
+
+```
+
+intersting that stringtie and scallop tx also found in pacbio are fairly different in size 
+
+now looking at intersection of reference(gencode) transcripts only. One of the biggest problems I was having previously was not detecting reference annotated transcripts 
+
+```{r}
+ref_stringtie_transcripts <- track %>% select(contains('st_')) %>% rowSums(.) %>% {. > 0} %>% {filter(track, ., code == '=') } %>%
+    pull(transcript_id)
+ref_scallop_transcripts <- track %>% select(contains('sp_')) %>% rowSums(.) %>% {. > 0} %>% {filter(track, . , code == '=') } %>%
+    pull(transcript_id)
+ref_pacbio_transcripts <- track %>% filter(.$pacbio,  code == '=') %>% pull(transcript_id)
+
+ref_usl <- list(pacbio=ref_pacbio_transcripts, stringtie=ref_stringtie_transcripts, scallop=ref_scallop_transcripts)
+
+upset(fromList(ref_usl))
+```
+
+
+```{r fig.width=13}
+ref_length_df <- filter(track, code == '=') %>% pull(transcript_id) %>% {filter(length_df, transcript_id %in% .)}
+ref_total_tx <- ref_length_df %>% group_by(intersection_case) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
+ggplot(data=ref_length_df, aes(x=intersection_case, y=length, color = intersection_case, fill=intersection_case)) + 
+    #geom_violin()+
+    geom_flat_violin(position = position_nudge(x = .2, y = 0),adjust = 2)+
+    geom_point(position = position_jitter(width = .15), size = .1, alpha=.1) + 
+    geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK") + 
+    geom_label( data = ref_total_tx,aes(label=count),fill='WHITE', colour='BLACK', y=min(max_tx_length, max(ref_length_df$length))) +
+    geom_hline(yintercept = 300, color='red') +
+    ylab('transcript lengths')+
+    xlab('build type') + 
+    ggtitle('length distributions of transcripts for set intersections\n(ref transcripts)') +
+    theme_minimal()
+
+ 
+```
+
+
+```{r echo=FALSE}
+ref_gtf <- rtracklayer::readGFF('/data/swamyvs/ocular_transcriptomes_pipeline/ref/gencode_comp_ano.gtf')
+ref_tx_lengths <- filter(ref_gtf, type =='exon') %>% select(seqid, strand, start, end, transcript_id ) %>%
+    mutate(ex_length=end-start) %>% group_by(transcript_id) %>% summarise(length=sum(ex_length) + n()) %>% mutate(lab='gencode')
+ttx <- ref_tx_lengths %>% group_by(lab) %>% summarise(count=n())
+mxl <- ref_tx_lengths %>% arrange(length) %>% tail(100) %>% pull(length) %>% min
+ref_tx_lengths <- ref_tx_lengths %>% filter(length < mxl)
+# ggplot(data = ref_tx_lengths,aes(x=lab, y=length, color=lab, fill=lab)) + 
+#     geom_flat_violin(position = position_nudge(x = .2, y = 0),adjust = 2)+
+#     geom_point(position = position_jitter(width = .15), size = .1, alpha=.1) +
+#     geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK") +
+#     geom_label( data = ttx,aes(label=count),fill='WHITE', colour='BLACK', y=mxl) +
+#     geom_hline(yintercept = 300, color='red') +
+#     ylab('transcript length') + 
+#     ggtitle('length distribution of gencode transcripts') + 
+#     theme_minimal()
+
+```
+
+
+So Pacbio is much better at recovering annotated transcripts than the short read constructers, recovering `r filter(track, code == '=') %>% pull(transcript_id) %>% {filter(all_length_df, transcript_id %in% ., build_type == 'pacbio') %>% nrow}` out of `r nrow(ref_tx_lengths)`, which is pretty good given that `r sum(ref_tx_lengths$length<300)` of the missing are under the 300bp limit
+
+
+finally, looking at the intergenic novel loci between the three builds 
+
+```{r}
+nv_stringtie_transcripts <- track %>% select(contains('st_')) %>% rowSums(.) %>% {. > 0} %>% 
+    {filter(track, ., code == 'u') } %>%
+    pull(transcript_id)
+nv_scallop_transcripts <- track %>% select(contains('sp_')) %>% rowSums(.) %>% {. > 0} %>% {filter(track, . , code == 'u') } %>%
+    pull(transcript_id)
+nv_pacbio_transcripts <- track %>% filter(.$pacbio,  code == 'u') %>% pull(transcript_id)
+
+nv_usl <- list(pacbio=nv_pacbio_transcripts, stringtie=nv_stringtie_transcripts, scallop=nv_scallop_transcripts)
+
+upset(fromList(nv_usl))
+
+```
+
+
+```{r echo=FALSE, fig.width=13}
+library(RBedtools)
+nv_length_df <- filter(track, code == 'u') %>% pull(transcript_id) %>% {filter(length_df, transcript_id %in% .)}
+nv_total_tx <- nv_length_df %>% group_by(intersection_case) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
+
+pad=5000
+ref_bed <- ref_gtf %>% filter(type == 'transcript') %>%
+    mutate(score = 999, start=start-pad, end=end+pad, start=replace(start, start<0, 0), strand=ifelse(strand == '+', '+','-')) %>% select(seqid, start, end, transcript_id, score, strand) %>% from_data_frame %>% RBedtools('sort', i=.)
+novel_bed <- nv_length_df <- filter(track, code == 'u') %>% pull(transcript_id) %>% {filter(gtf, transcript_id %in% .)} %>% 
+    filter(type == 'transcript') %>% mutate(score = 999,strand=ifelse(strand == '+', '+','-')) %>% select(seqid, start, end, transcript_id, score, strand) %>% from_data_frame %>% RBedtools('sort', i=.)
+no_intersect <- RBedtools('intersect', '-s -v', a=novel_bed, b=ref_bed ) %>% to_data_frame
+
+
+#nv_length_df <- filter(track, code == 'u') %>% pull(transcript_id) %>% {filter(length_df, transcript_id %in% .)}
+nv_length_df <- filter(length_df, transcript_id %in% no_intersect$X4)
+nv_total_tx <- nv_length_df %>% group_by(intersection_case) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
+ggplot(data=nv_length_df, aes(x=intersection_case, y=length, color = intersection_case, fill=intersection_case)) + 
+    #geom_violin()+
+    geom_flat_violin(position = position_nudge(x = .2, y = 0),adjust = 2)+
+    geom_point(position = position_jitter(width = .15), size = .25, alpha=.2) + 
+    geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK") + 
+    geom_label( data = nv_total_tx,aes(label=count),fill='WHITE', colour='BLACK', y=min(max_tx_length, max(nv_length_df$length))) +
+    geom_hline(yintercept = 300, color='red') +
+    ylab('transcript lengths')+
+    xlab('build type') + 
+    ggtitle('length distributions of transcripts for set intersections\n(fully novel transcripts)') +
+    theme_minimal()
+
+
+```
+
+Much less agreement here, and looks like a lot of the novel loci stringie is finding are false positives, though there is still a decent amount in the pacbio set 
+
+
+Now looking at number of samples each transcript was detected in within the short read transcriptomes; thisis one of the  main metrics for filtering transcripts in the current short read pipeline. Im considering the stringtie-pacbio and scallop-pacbio to be a true positive set
+
+
+```{r}
+det_df <- filter(length_df, intersection_case %in% c('stringtie-pacbio', 'scallop-pacbio') ) %>% inner_join(track %>% select(transcript_id, num_det))
+tt <- det_df %>% group_by(intersection_case) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
+ggplot(data=det_df, aes(x=intersection_case, y=num_det, color = intersection_case, fill=intersection_case)) + 
+    geom_flat_violin(position = position_nudge(x = .2, y = 0),adjust = 2)+
+    geom_point(position = position_jitter(width = .15), size = .1, alpha=.1) + 
+    geom_boxplot(outlier.shape = NA, alpha = 1, width = .1, colour = "BLACK") + 
+    geom_label( data = tt,aes(label=count),fill='WHITE', colour='BLACK', y=min(max_tx_length, max(det_df$num_det)  ) ) + 
+    #geom_hline(yintercept = 300, color='red') +
+    ylab('number of samples transcript is constructed in')+
+    xlab('build type') + 
+    ggtitle('Construction of transcripts across samples') +
+    theme_minimal()
+```
+
+
+So an almost uniform distribution for stringtie, so this the number of sample a transcript is detected in  metric is a fairly poor one, and I need to think of a different metric to use  
+
+
+
