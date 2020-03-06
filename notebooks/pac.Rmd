@@ -179,7 +179,7 @@ max_tx_length <- length_df %>% arrange(length) %>% tail(100) %>% pull(length) %>
 all_length_df <- bind_rows(filter(length_df, in_stringtie) %>% mutate(build_type='stringtie'), 
                            filter(length_df, in_scallop) %>% mutate(build_type='scallop'), 
                            filter(length_df, in_pacbio) %>% mutate(build_type='pacbio')
-                           )
+                           ) %>% filter(length < max_tx_length)
 total_tx <- all_length_df %>% group_by(build_type) %>% summarise(count=n()) %>% mutate(count=paste(count, 'transcripts'))
 
 

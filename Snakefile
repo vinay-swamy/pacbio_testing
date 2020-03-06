@@ -47,6 +47,13 @@ def salmon_input(id,sample_dict,fql):
         return('-r {}.fastq.gz'.format(id))
 
 
+def build2gtf(wc):
+    if wc == 'gencode_comp_ano':
+        return ref_GTF
+    elif wc == 'all_RPE_loose':
+        return 'data/combined_gtfs/all_RPE_loose.combined.gtf'
+
+
 ########## long read sample setup
 working_dir = config['working_dir']
 lr_sample_file = config['lr_sample_file']
@@ -84,18 +91,14 @@ scallop_version = config['scallop_version']
 minimap2_version = config['minimap2_version']
 
 
-
-
-
-
-
-
-
 rule all:
     # , expand('data/fasta/flnc/{sample}_flnc.fa', sample=pb_samplenames)
     input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
-        expand('data/combined_gtfs/all_RPE_{type}.combined.gtf', type=['strict', 'loose']),
+        expand(
+            'data/embedding_models/doc2vec_ep-15_PV-DBOW_kmer-{size}_dim-{dims}.pymodel', size=['8','10','12'], dims=['100','200','300']),
+        #expand('data/combined_gtfs/all_RPE_{type}.combined.gtf', type=['strict', 'loose']),
         expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
+        
 
 #### build transcriptomes 
 rule run_stringtie:
@@ -124,10 +127,13 @@ rule run_scallop:
         '''
 
 
+
 ### get reference transcript quantification
 rule make_tx_fasta:
-    input: gtf = ref_GTF
-    output: 'ref/gencode_comp_ano_tx.fa'
+    input:
+        gtf=lambda wildcards: build2gtf(wildcards.build)
+    output: 
+        'data/seqs/{build}_tx.fa'
     shell:
         '''
         {bam_path}/gffread/gffread -w {output} -g {ref_genome}  {input.gtf}
@@ -270,12 +276,6 @@ JK build is the genome
 '''
 
 
-
-def make_talon_config(wc, sample_dict):
-    res=[f'{sample},{wc},pacbio,data/clean_sams/RPE_Fetal.Tissue/{sample}_clean.sam' for sample in sample_dict.keys() if sample_dict[sample]['subtissue'] == wc]
-    return('\n'.join(res))
-
-
 rule run_talon:
     input: 
         sam= lambda wildcards: [f'data/clean_sams/{wildcards.tissue}/{sample}_clean.sam' for sample in lr_sample_dict.keys() if lr_sample_dict[sample]['subtissue'] == wildcards.tissue],
@@ -286,11 +286,12 @@ rule run_talon:
         build='gencode', 
         res_outdir=lambda wildcards: f'data/talon_results/{wildcards.tissue}/',
         prefix= lambda wildcards: f'db_{wildcards.tissue}', 
-        gtf_outfix=lambda wildcards: f'data/talon_gtf/{wildcards.tissue}'
+        outdir_pf=lambda wildcards: f'data/talon_results/{wildcards.tissue}/{wildcards.tissue}'
     output: 
         anno = 'data/talon_results/{tissue}/talon_read_annot.tsv', 
         qc = 'data/talon_results/{tissue}/QC.log',
-        gtf='data/talon_gtf/{tissue}_talon.gtf'
+        gtf='data/talon_results/{tissue}/{tissue}_talon.gtf',
+        abundance = 'data/talon_results/{tissue}/{tissue}_talon_abundance.tsv '
     shell:
         '''
         tlncfg=/tmp/config.{wildcards.tissue}.csv
@@ -307,13 +308,13 @@ rule run_talon:
             --db {input.db} \
             --build {input.genome} \
             --annot {params.prefix} \
-            --o {params.gtf_outfix}
+            --o {params.outdir_pf}
         
         talon_abundance \
             --db {input.db} \
             --build {input.genome} \
             --annot {params.prefix} \
-            --o {param.res_outdir}
+            --o {param.outdir_pf}
         
         rm -rf {wildcards.tissue}_talon_tmp/ 
         '''
@@ -322,10 +323,10 @@ rule run_talon:
 rule merge_all_gtfs:
     input: 
         stringtie_gtfs=[f'data/stringtie/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'], 
-        scallop_gtfs = [
-            f'data/scallop/{sample}.combined.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
+        scallop_gtfs = [f'data/scallop/{sample}.combined.gtf' for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
         lr_gtfs = expand('data/talon_gtf/{tissue}_talon.gtf', tissue=subtissues)
-    params: prefix = lambda wildcards: f'data/combined_gtfs/all_RPE_{wildcards.type}',
+    params: 
+            prefix = lambda wildcards: f'data/combined_gtfs/all_RPE_{wildcards.type}',
             flag= lambda wildcards:'--strict-match' if wildcards.type == 'strict' else '' 
     output: 'data/combined_gtfs/all_RPE_{type}.combined.gtf'
     shell:
@@ -333,3 +334,36 @@ rule merge_all_gtfs:
         module load {gffcompare_version}
         gffcompare {params.flag}  -r {ref_GTF} -o {params.prefix} {input.stringtie_gtfs} {input.scallop_gtfs} {input.lr_gtfs}
         '''
+
+
+rule kmerize_transcripts:
+    input: 
+        fasta='data/seqs/all_RPE_loose_tx.fa'
+    output:  
+        kmer_lineSentence = 'data/model_data/all_RPE_{size}_kmers.lsf', 
+        tx_id_file = 'data/model_data/all_RPE_kmer-{size}_txids.txt'
+    shell:
+        '''
+        python3  scripts/kmerize_fasta_low_mem.py \
+            --infasta {input.fasta} \
+            --kmerSize {wildcards.size} \
+            --outLsfFile {output.kmer_lineSentence} \
+            --txIDfile  {output.tx_id_file}
+        '''
+
+
+rule train_doc2vec:
+    input: 
+        corpus = 'data/model_data/all_RPE_{size}_kmers.lsf'
+    output: 
+        model = 'data/embedding_models/doc2vec_ep-15_PV-DBOW_kmer-{size}_dim-{dims}.pymodel'
+    shell:
+        '''
+        which python3 
+        python3 scripts/train_doc2vec.py \
+            --corpusFile {input.corpus}\
+            --kmerSize {wildcards.size} \
+            --trainedModel {output.model}
+        '''
+
+

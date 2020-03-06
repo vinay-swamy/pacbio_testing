@@ -1,7 +1,7 @@
 {
 	"__default__": {
-		"partition": "quick",
-		"time": "4:00:00",
+		"partition": "norm",
+		"time": "08:00:00",
 		"mem": "16g",
 		"cpus-per-task": "1",
 		"output": "00log/{rule}_{wildcards}.out",
@@ -9,7 +9,6 @@
 		"extra": "",
 		"name": "{rule}.job"
 	},
-
 	"align_minimap2": {
 		"partition": "norm",
 		"time": "24:00:00",
@@ -39,5 +38,11 @@
 		"time": "8:00:00",
 		"mem": "60G",
 		"cpus-per-task": "16"		
+	},
+	"train_doc2vec" : {
+		"partition" : "largemem",
+		"cpus-per-task": "32",
+		"time" : "24:00:00",
+		"mem": "400G"
 	}
 }
