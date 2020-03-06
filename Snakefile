@@ -362,7 +362,7 @@ rule train_doc2vec:
         which python3 
         python3 scripts/train_doc2vec.py \
             --corpusFile {input.corpus}\
-            --kmerSize {wildcards.size} \
+            --dimSize {wildcards.dims} \
             --trainedModel {output.model}
         '''
 

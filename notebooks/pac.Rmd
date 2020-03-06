@@ -362,3 +362,31 @@ So an almost uniform distribution for stringtie, so this the number of sample a 
 
 
 
+
+
+
+```{r}
+
+files <- paste0( 'data/stringtie/',sample_table$sample,'.gtf' )
+names <- paste0('st_',sample_table$sample)
+t2g <- track %>% select(transcript_id, gene_name=ref_gene_name) %>%
+    mutate(gene_name=replace(gene_name,gene_name == '\\|', transcript_id[gene_name == '\\|'] ))
+read_stringtie <- function(file, name ){
+    df <- data.table::fread(file, sep='\t', header = F) %>% as_tibble %>% filter(V3 == "transcript")
+    tibble(
+            !!name := str_extract(df$V9, 'transcript_id \".+\";') %>% str_split('\"') %>% sapply(function(x)x[2]),
+            TPM=str_extract(df$V9, 'TPM \".+\";') %>% str_split('\"') %>% sapply(function(x)x[2]) %>% as.numeric 
+            )
+
+}
+
+
+string_tie_quant <- lapply(seq_along(files), function(i) read_stringtie(files[i], names[i]) %>% 
+                                                inner_join(tc2mstrg_simple[c('transcript_id', names[i])]) %>% 
+                                                select(-(!!names[i]))  %>% rename(!!names[i]:=TPM)) %>% 
+    reduce(full_join) %>% 
+    select(transcript_id, everything())
+
+```
+
+

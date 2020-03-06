@@ -4,7 +4,6 @@ tissueFile: ref/tissues.txt
 ref_GTF: /data/swamyvs/ocular_transcriptomes_pipeline/ref/gencode_comp_ano.gtf
 working_dir: /data/swamyvs/pacbio_testing
 lr_sample_file: sampleTableRPE_pacbio.tsv
-pacbiosamples: pacBioSample.tsv
 ref_genome: /data/swamyvs/ocular_transcriptomes_pipeline/ref/gencode_genome.fa
 variants: ref/encode_variants.vcf.gz
 chr_names: ref/chr_fasta_entries.txt
