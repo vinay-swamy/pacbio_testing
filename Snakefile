@@ -52,6 +52,8 @@ def build2gtf(wc):
         return ref_GTF
     elif wc == 'all_RPE_loose':
         return 'data/combined_gtfs/all_RPE_loose.combined.gtf'
+    elif wc == 'all_RPE_strict':
+        return 'data/combined_gtfs/all_RPE_strict.combined.gtf'        
 
 
 ########## long read sample setup
@@ -95,7 +97,11 @@ rule all:
     # , expand('data/fasta/flnc/{sample}_flnc.fa', sample=pb_samplenames)
     input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
         expand(
-            'data/embedding_models/doc2vec_ep-15_PV-DBOW_kmer-{size}_dim-{dims}.pymodel', size=['8','10','12'], dims=['100','200','300']),
+            'data/loose_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz', 
+            dm=['0','1'],
+            wc=['3','15','30'],
+            size=['10', '12', '16', '20'], 
+            dims=['100', '200', '300',]),
         #expand('data/combined_gtfs/all_RPE_{type}.combined.gtf', type=['strict', 'loose']),
         expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
         
@@ -336,34 +342,77 @@ rule merge_all_gtfs:
         '''
 
 
+rule extract_gtf_info:
+    input:
+        gtf='data/combined_gtfs/all_RPE_{type}.combined.gtf',
+        track_file='data/combined_gtfs/all_RPE_{type}.tracking'
+    params:
+        out_prefix='data/gtf_info/all_RPE_{type}'
+    output:
+        convtab = 'data/gtf_info/all_RPE_{type}_convtab.tsv.gz',
+        det_df = 'data/gtf_info/all_RPE_{type}_detdf.tsv.gz',
+        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv'
+    shell:
+        '''
+        module load R
+        Rscripts scripts/clean_track_file.R \
+            --workingDir {working_dir} \
+            --rawTrackFile {input.track_file} \
+            --gtfFile {input.gtf} \
+            --outPfx {params.out_prefix}
+
+        '''
+
+
+
 rule kmerize_transcripts:
     input: 
-        fasta='data/seqs/all_RPE_loose_tx.fa'
+        fasta='data/seqs/all_RPE_{type}_tx.fa',
+        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv'
+    params:
+        out_prefix = lambda wildcards: f'data/{wildcards.type}_raw_model_data/all_RPE_loose_kmers_{wildcards.size}'
     output:  
-        kmer_lineSentence = 'data/model_data/all_RPE_{size}_kmers.lsf', 
-        tx_id_file = 'data/model_data/all_RPE_kmer-{size}_txids.txt'
+        full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_full.lsf', 
+        full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_full_txids.txt',
+        targ_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ.lsf', 
+        targ_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ_txids.txt'
     shell:
         '''
         python3  scripts/kmerize_fasta_low_mem.py \
             --infasta {input.fasta} \
             --kmerSize {wildcards.size} \
-            --outLsfFile {output.kmer_lineSentence} \
-            --txIDfile  {output.tx_id_file}
+            --targetTx {input.target_tx} \
+            --outPfx {params.out_prefix}
+           
         '''
 
 
-rule train_doc2vec:
+'''
+03/11/20 changed so we are training on only the target tx, maybe this will help thigns 
+q
+'''
+
+rule train_doc2vec_and_infer_vectors:
     input: 
-        corpus = 'data/model_data/all_RPE_{size}_kmers.lsf'
+        corpus = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_full.lsf',
+        target_tx = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ.lsf',
+        targ_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ_txids.txt'
     output: 
-        model = 'data/embedding_models/doc2vec_ep-15_PV-DBOW_kmer-{size}_dim-{dims}.pymodel'
+        out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
+        model = lambda wildcards: f'data/{wildcards.type}_set/embedding_models/doc2vec_ep-15_PV-DBOW_kmer-{wildcards.size}_dim-{wildcards.dims}.pymodel'
+        
     shell:
         '''
-        which python3 
         python3 scripts/train_doc2vec.py \
-            --corpusFile {input.corpus}\
+            --corpusFile {input.target_tx} \
+            --targetTxLsf {input.target_tx} \
+            --targetTxIDs {input.targ_txids}\
             --dimSize {wildcards.dims} \
-            --trainedModel {output.model}
+            --wc {wildcards.wc} \
+            --dm {wildcards.dm} \
+            --trainedModel {params.model} \
+            --outMatrix {output.out_matrix}
         '''
+
 
 

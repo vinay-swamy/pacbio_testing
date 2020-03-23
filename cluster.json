@@ -39,10 +39,10 @@
 		"mem": "60G",
 		"cpus-per-task": "16"		
 	},
-	"train_doc2vec" : {
+	"train_doc2vec_and_infer_vectors" : {
 		"partition" : "largemem",
 		"cpus-per-task": "32",
 		"time" : "24:00:00",
-		"mem": "400G"
+		"mem": "1000G"
 	}
 }
