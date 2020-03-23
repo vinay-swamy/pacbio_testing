@@ -73,7 +73,7 @@ ref_genome=config['ref_genome']
 working_dir=config['working_dir']
 variants=config['variants']
 chr_names=config['chr_names']
-
+uniprot_file=config['uniprot_file']
 ############ shot read sample set up 
 sr_sample_file = config['sr_sampleFile']
 sr_sample_dict = readSampleFile(config['sr_sampleFile'])
@@ -102,7 +102,7 @@ rule all:
             wc=['3','15','30'],
             size=['10', '12', '16', '20'], 
             dims=['100', '200', '300',]),
-        #expand('data/combined_gtfs/all_RPE_{type}.combined.gtf', type=['strict', 'loose']),
+        expand('data/gtf_info/all_RPE_{type}_target_tx.tsv', type=['strict', 'loose']),
         expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
         
 
@@ -297,7 +297,7 @@ rule run_talon:
         anno = 'data/talon_results/{tissue}/talon_read_annot.tsv', 
         qc = 'data/talon_results/{tissue}/QC.log',
         gtf='data/talon_results/{tissue}/{tissue}_talon.gtf',
-        abundance = 'data/talon_results/{tissue}/{tissue}_talon_abundance.tsv '
+        abundance = 'data/talon_results/{tissue}/{tissue}_talon_abundance.tsv'
     shell:
         '''
         tlncfg=/tmp/config.{wildcards.tissue}.csv
@@ -345,20 +345,25 @@ rule merge_all_gtfs:
 rule extract_gtf_info:
     input:
         gtf='data/combined_gtfs/all_RPE_{type}.combined.gtf',
-        track_file='data/combined_gtfs/all_RPE_{type}.tracking'
+        track_file='data/combined_gtfs/all_RPE_{type}.tracking',
+        abundance_file='data/talon_results/RPE_Fetal.Tissue/RPE_Fetal.Tissue_talon_abundance.tsv'
     params:
         out_prefix='data/gtf_info/all_RPE_{type}'
     output:
         convtab = 'data/gtf_info/all_RPE_{type}_convtab.tsv.gz',
         det_df = 'data/gtf_info/all_RPE_{type}_detdf.tsv.gz',
-        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv'
+        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv',
+        validaion_tx = 'data/gtf_info/all_RPE_{type}_validation_tx.tsv'
     shell:
         '''
         module load R
-        Rscripts scripts/clean_track_file.R \
+        Rscript scripts/clean_track_file.R \
             --workingDir {working_dir} \
             --rawTrackFile {input.track_file} \
+            --refGtfFile {ref_GTF} \
             --gtfFile {input.gtf} \
+            --uniprotFile {uniprot_file} \
+            --talonAbFile {input.abundance_file} \
             --outPfx {params.out_prefix}
 
         '''
@@ -368,20 +373,22 @@ rule extract_gtf_info:
 rule kmerize_transcripts:
     input: 
         fasta='data/seqs/all_RPE_{type}_tx.fa',
-        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv'
+        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv',
+        validaion_tx = 'data/gtf_info/all_RPE_{type}_validation_tx.tsv'
     params:
-        out_prefix = lambda wildcards: f'data/{wildcards.type}_raw_model_data/all_RPE_loose_kmers_{wildcards.size}'
+        out_prefix = lambda wildcards: f'data/{wildcards.type}_set/raw_model_data/all_RPE_kmers_{wildcards.size}'
     output:  
-        full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_full.lsf', 
-        full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_full_txids.txt',
-        targ_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ.lsf', 
-        targ_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ_txids.txt'
+        full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train.lsf', 
+        full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
+        val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
+        val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
     shell:
         '''
         python3  scripts/kmerize_fasta_low_mem.py \
             --infasta {input.fasta} \
             --kmerSize {wildcards.size} \
-            --targetTx {input.target_tx} \
+            --trainTx {input.target_tx} \
+            --valTx {input.validaion_tx} \
             --outPfx {params.out_prefix}
            
         '''
@@ -394,24 +401,28 @@ q
 
 rule train_doc2vec_and_infer_vectors:
     input: 
-        corpus = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_full.lsf',
-        target_tx = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ.lsf',
-        targ_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_targ_txids.txt'
+        full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train.lsf', 
+        full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
+        val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
+        val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
     output: 
         out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
-        model = lambda wildcards: f'data/{wildcards.type}_set/embedding_models/doc2vec_ep-15_PV-DBOW_kmer-{wildcards.size}_dim-{wildcards.dims}.pymodel'
+        val_matrix = 'data/{type}_set/embedded_model_data/all_RPE_validation-tx_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
+        model = 'data/{type}_set/embedding_models/all_RPE_doc2vec_ep-15_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.pymodel'
         
     shell:
         '''
         python3 scripts/train_doc2vec.py \
-            --corpusFile {input.target_tx} \
-            --targetTxLsf {input.target_tx} \
-            --targetTxIDs {input.targ_txids}\
-            --dimSize {wildcards.dims} \
+            --corpusFile {input.full_lsf} \
+            --corpusTxIDs {input.full_txids} \
+            --valTxLsf {input.val_lsf} \
+            --valTxIDs {input.val_txids}\
+            --edim {wildcards.dims} \
             --wc {wildcards.wc} \
             --dm {wildcards.dm} \
-            --trainedModel {params.model} \
-            --outMatrix {output.out_matrix}
+            --trainedModel {output.model} \
+            --outTrainMatrix {output.out_matrix} \
+            --outValMatrix {output.val_matrix}
         '''
 
 
