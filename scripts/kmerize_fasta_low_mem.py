@@ -47,10 +47,10 @@ with open(args.infasta) as infa_file,\
     fasta = SeqIO.parse(infa_file, format='fasta')
     for record in fasta:
         header=str(record.id)
+        kmers = kmerize_sequence(str(record.seq), kmer_size, kmer_dist, 1)
+        line=' '.join(kmers[0]) + '\n'
+        ids=header + '\n'
         if header in train_tx:
-            kmers = kmerize_sequence(str(record.seq), kmer_size, kmer_dist, 1)
-            line=' '.join(kmers[0]) + '\n'
-            ids=header + '\n'
             full_lsf.write(line)
             full_txid_file.write(ids)
         elif header in val_tx:
