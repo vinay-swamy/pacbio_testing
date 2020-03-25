@@ -97,7 +97,7 @@ rule all:
     # , expand('data/fasta/flnc/{sample}_flnc.fa', sample=pb_samplenames)
     input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
         expand(
-            'data/loose_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz', 
+            'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
             dm=['0','1'],
             wc=['3','15','30'],
             size=['10', '12', '16', '20'], 
@@ -205,12 +205,15 @@ rule build_talon_db:
     output: 'data/talon_db/{tissue}.db'
     shell:
         '''
+
         talon_initialize_database \
             --f {input.gtf} --g {input.genome} \
             --a {params.anno_name} \
             --5p 50 \
             --3p 50 \
-            --idprefix {params.prefix} --o {params.outdir} 
+            --idprefix {params.prefix} \
+            --o {params.outdir} 
+
         '''
 
 rule align_minimap2:
@@ -412,6 +415,7 @@ rule train_doc2vec_and_infer_vectors:
         
     shell:
         '''
+
         python3 scripts/train_doc2vec.py \
             --corpusFile {input.full_lsf} \
             --corpusTxIDs {input.full_txids} \
@@ -423,6 +427,26 @@ rule train_doc2vec_and_infer_vectors:
             --trainedModel {output.model} \
             --outTrainMatrix {output.out_matrix} \
             --outValMatrix {output.val_matrix}
+
+        '''
+
+
+rule run_experiment:
+    input:
+        out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz'
+    params:
+        out_dir = lambda wildcards: f'data/{wildcards.type}_set/model_results/all_RPE_dm-{wildcards.dm}_wc-{wildcards.wc}_kmers-{wildcards.size}_dims-{wildcards.dims}/'
+    output:
+        out_csv = 'data/{type}_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv'
+    shell:
+        '''
+        python3 scripts/run_models.py \
+            --workingDir {working_dir} \
+            --inputFile {input.out_matrix} \
+            --inputType skl \
+            --nproc 32 \
+            --outputDir {params.out_dir}
+    
         '''
 
 
