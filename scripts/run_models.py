@@ -5,13 +5,13 @@ import argparse
 import os 
 import pathlib 
 import numpy as np 
-from loaders import load_ilearn_data, load_snakemake_data 
+from loaders import *
 from sklearn.ensemble import RandomForestClassifier 
 from xgboost import XGBClassifier 
 from functools import partial 
 import pandas as pd 
 from class_defs import Experiment 
-os.chdir('/data/swamyvs/pacbio_testing') 
+#os.chdir('/data/swamyvs/pacbio_testing') 
 
 #%%
 def train_sk_model(model, dat):
@@ -30,20 +30,24 @@ parser.add_argument('--inputType',action = 'store', dest='input_type', default='
 parser.add_argument('--nproc', action = 'store', type=int, default=2)
 parser.add_argument('--outputDir', action = 'store',  dest='output_dir')
 args=parser.parse_args()
+os.chdir(args.working_dir)
 #%%
 outdir= args.output_dir
 pathlib.Path(outdir).mkdir(parents=True, exist_ok=True)
 mode='file'
+lab_file = '/data/swamyvs/pacbio_testing/data/gtf_info/all_RPE_loose_target_tx.tsv'
 if mode == 'file':
     with open(outdir+'model_results.csv', 'w+') as model_res_file:
         if args.input_type == 'skl':
-            data_list=load_snakemake_data(args.input_file, 
-                            'data/gtf_info/all_RPE_loose_target_tx.tsv',
-                            outdir)
+            data_list=load_snakemake_data(args.input_file, lab_file, outdir)
         elif args.input_type == 'ilearn':
-            data_list = load_ilearn_data(args.input_file, 
-                            'data/gtf_info/all_RPE_loose_target_tx.tsv',
-                            outdir)
+            data_list = load_ilearn_data(args.input_file, lab_file, outdir)
+        elif args.input_type == 'pyfeat':
+            data_list = load_pyfeat_data(args.input_file, lab_file, outdir)
+        elif args.input_type == 'all_ilearn':
+            data_list = load_all_ilearn(lab_file, outdir)
+        elif args.input_type == 'all_pyfeat':
+            data_list = load_all_pyfeat(lab_file, outdir)
         rf=partial(train_sk_model, RandomForestClassifier(n_estimators=100, random_state=32, n_jobs=args.nproc))
         xgb=partial(train_sk_model,XGBClassifier(n_estimators=args.nproc, random_state=42)  )
         model_d={'random_forest' : rf , 'xgbc': xgb}
