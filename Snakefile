@@ -1,5 +1,3 @@
-
-
 def readPacBioSamples(samplefile):
     # returns a dictionary of dictionaries where first dict key is sample id and second dict key are sample  properties
     res={}
