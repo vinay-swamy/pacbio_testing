@@ -93,15 +93,17 @@ minimap2_version = config['minimap2_version']
 
 rule all:
     # , expand('data/fasta/flnc/{sample}_flnc.fa', sample=pb_samplenames)
-    input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
-        expand(
-            'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
-            dm=['0','1'],
-            wc=['3','15','30'],
-            size=['10', '12', '16', '20'], 
-            dims=['100', '200', '300',]),
-        expand('data/gtf_info/all_RPE_{type}_target_tx.tsv', type=['strict', 'loose']),
-        expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
+    input:'data/gtf_info/all_RPE_loose_detdf.tsv.gz'
+    #input:expand('data/stringtie_superread/{sample}.gtf', sample=[sample for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'])
+    # input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
+    #     expand(
+    #         'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
+    #         dm=['0','1'],
+    #         wc=['3','15','30'],
+    #         size=['10', '12', '16', '20'], 
+    #         dims=['100', '200', '300',]),
+    #     expand('data/gtf_info/all_RPE_{type}_target_tx.tsv', type=['strict', 'loose']),
+    #     expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
         
 
 #### build transcriptomes 
@@ -117,11 +119,55 @@ rule run_stringtie:
         stringtie {input[0]} -o {output[0]} {params.lib_type} -l st_{wildcards.sample} -p 8 -G {ref_GTF}
         '''
 
+def get_sr_fq_cmd(sample,fql, sample_dict):
+    if sample_dict[sample]['paired']:
+        l = fql + f'fastq_files/{sample}_1.fastq.gz' 
+        r = fql + f'fastq_files/{sample}_2.fastq.gz'
+        cmd= f' -1 {l} -2 {r}'
+    else:
+        up= fql + f'fastq_files/{sample}.fastq.gz'
+        cmd = f'-U {up}'
+    return cmd 
+
+rule make_super_read_gtfs:
+    input:
+        fastqs=lambda wildcards: [sr_fql + f'fastq_files/{wildcards.sample}_1.fastq.gz', sr_fql + f'fastq_files/{wildcards.sample}_2.fastq.gz'] if sr_sample_dict[wildcards.sample]['paired'] else sr_fql + f'fastq_files/{wildcards.sample}.fastq.gz'
+    params:
+        fq_cmd= lambda wildcards: get_sr_fq_cmd(wildcards.sample, sr_fql, sr_sample_dict)
+    output: 
+        super_read_bam='bams/{sample}/sr_sort.bam', 
+        gtf = 'data/stringtie_superread/{sample}.gtf'
+    shell:
+        '''
+        module load singularity
+        singularity exec --bind /data/swamyvs/,/data/OGVFB_BG/ /data/swamyvs/singularity_images/stringtie2.sif \
+            python2 /stringtie/SuperReads_RNA/create_rna_sr.py \
+                -p 32  \
+                {params.fq_cmd}  \
+                -H ref/hisat2_index \
+                -g /data/swamyvs/pacbio_testing/ \
+                -G ref/gmap_index/gencode/  \
+                --hisat2-cmd "/hisat2-2.2.0/hisat2" \
+                --out-dir /data/swamyvs/pacbio_testing/bams/{wildcards.sample}/ 
+        module load {stringtie_version}
+        stringtie {output.super_read_bam} -o {output.gtf} -l stsr_{wildcards.sample} -p 32 -G {ref_GTF}
+        '''
+
+
+
+rule basic_filter_stringtie:
+    input:'data/stringtie/{sample}.gtf'
+    output:'data/stringtie_filtered/{sample}.gtf'
+    shell:
+        '''
+        module load {stringtie_version}
+        stringtie --merge -o {output} -F 1 -T 1 -l stf_{wildcards.sample} {input}
+        '''
 
 rule run_scallop:
     input: bam_path + 'STARbams/{sample}/Sorted.out.bam'
     params: pfx = lambda wildcards: f'data/scallop/{wildcards.sample}'
-    output: 'data/scallop/{sample}.combined.gtf'
+    output: 'data/scallop/{sample}.gtf'
     shell:
         '''
         module load {scallop_version}
@@ -297,7 +343,7 @@ rule run_talon:
     output: 
         anno = 'data/talon_results/{tissue}/talon_read_annot.tsv', 
         qc = 'data/talon_results/{tissue}/QC.log',
-        gtf='data/talon_results/{tissue}/{tissue}_talon.gtf',
+        gtf='data/talon_results/{tissue}/{tissue}_talon_observedOnly.gtf',
         abundance = 'data/talon_results/{tissue}/{tissue}_talon_abundance.tsv'
     shell:
         '''
@@ -315,13 +361,14 @@ rule run_talon:
             --db {input.db} \
             --build {input.genome} \
             --annot {params.prefix} \
+            --observed \
             --o {params.outdir_pf}
         
         talon_abundance \
             --db {input.db} \
             --build {input.genome} \
             --annot {params.prefix} \
-            --o {param.outdir_pf}
+            --o {params.outdir_pf}
         
         rm -rf {wildcards.tissue}_talon_tmp/ 
         '''
@@ -329,18 +376,36 @@ rule run_talon:
 
 rule merge_all_gtfs:
     input: 
-        stringtie_gtfs=[f'data/stringtie/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'], 
+        stringtie_gtfs=[f'data/stringtie/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
+        stringtie_sr = [f'data/stringtie_superread/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
+        stringtie_filt = [f'data/stringtie_filtered/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
         scallop_gtfs = [f'data/scallop/{sample}.combined.gtf' for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
-        lr_gtfs = expand('data/talon_gtf/{tissue}_talon.gtf', tissue=subtissues)
+        lr_gtfs = expand('data/talon_results/{tissue}/{tissue}_talon_observedOnly.gtf', tissue=subtissues)
     params: 
             prefix = lambda wildcards: f'data/combined_gtfs/all_RPE_{wildcards.type}',
             flag= lambda wildcards:'--strict-match' if wildcards.type == 'strict' else '' 
-    output: 'data/combined_gtfs/all_RPE_{type}.combined.gtf'
+    output: 
+        gtf = 'data/combined_gtfs/all_RPE_{type}.combined.gtf', 
+        track = 'data/combined_gtfs/all_RPE_{type}.tracking'
     shell:
         '''
         module load {gffcompare_version}
-        gffcompare {params.flag}  -r {ref_GTF} -o {params.prefix} {input.stringtie_gtfs} {input.scallop_gtfs} {input.lr_gtfs}
+        gffcompare {params.flag}  -r {ref_GTF} -o {params.prefix} {input.stringtie_gtfs} {input.scallop_gtfs} {input.stringtie_filt} {input.stringtie_sr} {input.lr_gtfs}
         '''
+
+
+rule merge_all_with_filt:
+    input: 
+        all='data/combined_gtfs/all_RPE_loose.combined.gtf', 
+        filt= [f'data/stringtie_filtered/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE']
+    output: 
+        'data/combined_gtfs/all_RPE_loose_wfilter.combined.gtf'
+    shell:
+        '''
+        module load {gffcompare_version}
+        gffcompare  -r {ref_GTF} -o data/combined_gtfs/all_RPE_loose_wfilter {input.all} {input.filt}
+        '''
+
 
 
 rule extract_gtf_info:
