@@ -143,7 +143,7 @@ class TfDataObj:
         self.zero_label=zero_label
 
 class Experiment:
-    def __init__(self, obj_list,model_dict, outdir ):
+    def __init__(self, obj_list,model_dict, outdir, save_probs=False):
         obj_dict={}
         for obj in obj_list:
             obj_dict[obj.name]=obj
@@ -151,12 +151,16 @@ class Experiment:
         self.model_dict=model_dict
         self.trained_model_dict={}
         self.outdir=outdir
+        self.save_probs = save_probs
     
 
     def run_model(self, obj_name, model_name):
         obj=self.obj_dict[obj_name]
         model=self.model_dict[model_name]
         trained_model,y_true, y_pred_class, y_pred_prob=model(obj)
+        
+        if self.save_probs:
+            pd.DataFrame.from_dict( {'y_true':y_true, 'y_pred_class':y_pred_class, 'y_pred_prob': y_pred_prob}).to_csv(self.outdir + 'y_probs.csv', index= False) 
         model_res_line = model_results(obj, y_true, y_pred_class, y_pred_prob, f'{obj_name}_{model_name}', self.outdir)
         return([model_res_line])
     

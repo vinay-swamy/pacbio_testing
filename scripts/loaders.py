@@ -28,7 +28,7 @@ def split_data_into_subsets(obj_class, X_df, labs, X_df_val, val_labs, data_name
 
 
 
-def load_snakemake_data(X_file_name, lab_file):
+def load_snakemake_data(X_file_name, lab_file, run_selection='all'):
     fn=X_file_name.split('/')[-1]
     dm=int(fn.split('_')[2].split('-')[1])
     wc=int(fn.split('_')[3].split('-')[1])
@@ -50,7 +50,12 @@ def load_snakemake_data(X_file_name, lab_file):
         .assign(target_label=lambda x: np.where(x['intersection_case'].isin(all_positive_cases),1,0 )))
     X_df_val=pd.read_csv(val_xfile,names=['transcript_id']+ list(range(edim)))
     val_labs=pd.read_csv(val_labfile, sep='\t')
-    skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name)
+    if run_selection == 'all':
+        prefix='_dataset='
+    else:
+        prefix=''
+        data_name = ''
+    skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name, prefix=prefix)
     return skl_objs
 
 
@@ -174,7 +179,7 @@ def select_if_in(l, s):
 
 
 
-def load_merge(lab_file, data_name, return_df=False):
+def load_merge(lab_file, data_name, return_df=False, run_selection = 'all'):
     c_names= data_name.split(':')
     file_dict= {'embd-1': ('data/loose_set/embedded_model_data/all_RPE_dm-0_wc-3_kmers-12_dims-300.csv.gz', 
                             'data/loose_set/embedded_model_data/all_RPE_validation-tx_dm-0_wc-3_kmers-12_dims-300.csv.gz'
@@ -215,8 +220,12 @@ def load_merge(lab_file, data_name, return_df=False):
     if return_df:
         return X_df, X_df_val
     
-    skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name)
-    print('\n\n***MERGE LOAD SUCCESSFUL***\n\n')
+    if run_selection == 'all':
+            prefix='_dataset='
+    else:
+        prefix=''
+        data_name = ''
+    skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name, prefix=prefix)
     return skl_objs
 
 
