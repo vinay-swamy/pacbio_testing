@@ -111,6 +111,8 @@ if mode == 'file':
             data_list = load_merge(lab_file, args.input_file, run_selection = args.exp_sel)
         elif args.input_type == 'tf_merge':
             data_list = load_merge_tf(lab_file, args.input_file)
+        elif args.input_type == 'skl-bal':
+            data_list = load_snakemake_data(args.input_file, lab_file, run_selection=args.exp_sel, balance_data=True)
         elif args.input_type == 'load':
             with open('testing/data_list.pck', 'rb') as p:
                 data_list=pickle.load(p)

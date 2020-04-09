@@ -44,7 +44,8 @@ def plot_metrics(history, outdir):
 
 
 def model_results(obj,Y_true, Y_pred_class, Y_pred_prob, data_name, outdir):
-    
+    Y_true=np.asarray(Y_true)
+    Y_pred_class = np.asarray(Y_pred_class)
     #Y_true = obj.Y_test
 
     colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -85,9 +86,14 @@ def model_results(obj,Y_true, Y_pred_class, Y_pred_prob, data_name, outdir):
     tm = ['precision', 'recall', 'f1-score']
     zero_line = [str(cr_dict['0'][key]) for key in tm]
     one_line = [str(cr_dict['1'][key]) for key in tm]
-    accuracy = str(cr_dict['accuracy'])
+    total_accuracy = str(cr_dict['accuracy'])
+    one_accuracy = sum( Y_true[Y_true == 1] == Y_pred_class[Y_true == 1] ) / sum (Y_true == 1)
+    zero_accuracy = sum( Y_true[Y_true == 0] == Y_pred_class[Y_true == 0] ) / sum (Y_true == 0)
+    
+    
+    
     out_cs_line = ','.join([data_name] + zero_line +
-                           one_line + [accuracy]) + '\n'
+                           one_line + [total_accuracy, str(one_accuracy), str(zero_accuracy)] ) + '\n'
     return(out_cs_line)
 
 
@@ -143,7 +149,7 @@ class TfDataObj:
         self.zero_label=zero_label
 
 class Experiment:
-    def __init__(self, obj_list,model_dict, outdir, save_probs=False):
+    def __init__(self, obj_list,model_dict, outdir, save_probs=False, save_cm=False):
         obj_dict={}
         for obj in obj_list:
             obj_dict[obj.name]=obj
@@ -152,6 +158,7 @@ class Experiment:
         self.trained_model_dict={}
         self.outdir=outdir
         self.save_probs = save_probs
+        self.save_cm = save_cm
     
 
     def run_model(self, obj_name, model_name):
