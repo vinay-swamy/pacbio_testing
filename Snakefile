@@ -51,7 +51,13 @@ def build2gtf(wc):
     elif wc == 'all_RPE_loose':
         return 'data/combined_gtfs/all_RPE_loose.combined.gtf'
     elif wc == 'all_RPE_strict':
-        return 'data/combined_gtfs/all_RPE_strict.combined.gtf'        
+        return 'data/combined_gtfs/all_RPE_strict.combined.gtf'   
+
+def build2fa(wc):
+    if wc == 'gencode_comp_ano':
+        return 'data/seqs/gencode_comp_ano_tx.fa'
+    elif wc == 'all_RPE_loose':
+        return 'data/seqs/all_RPE_loose_tx.fa'    
 
 
 ########## long read sample setup
@@ -93,17 +99,18 @@ minimap2_version = config['minimap2_version']
 
 rule all:
     # , expand('data/fasta/flnc/{sample}_flnc.fa', sample=pb_samplenames)
-    input:'data/gtf_info/all_RPE_loose_detdf.tsv.gz'
+    #input:'data/gtf_info/all_RPE_loose_detdf.tsv.gz'
     #input:expand('data/stringtie_superread/{sample}.gtf', sample=[sample for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'])
-    # input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
-    #     expand(
-    #         'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
-    #         dm=['0','1'],
-    #         wc=['3','15','30'],
-    #         size=['10', '12', '16', '20'], 
-    #         dims=['100', '200', '300',]),
+    input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
+        expand(
+            'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
+            dm=['0','1'],
+            wc=['3','15','30'],
+            size=['10', '12', '16', '20'], 
+            dims=['100', '200', '300']),
+        expand('data/salmon_quant/all_RPE_loose/{sampleID}/quant.sf', sampleID=sr_sample_names)
     #     expand('data/gtf_info/all_RPE_{type}_target_tx.tsv', type=['strict', 'loose']),
-    #     expand('data/salmon_quant/{sampleID}/quant.sf', sampleID=sr_sample_names)
+         
         
 
 #### build transcriptomes 
@@ -189,9 +196,11 @@ rule make_tx_fasta:
         {bam_path}/gffread/gffread -w {output} -g {ref_genome}  {input.gtf}
         '''
 
+
+
 rule build_salmon_index:
-    input: 'ref/gencode_comp_ano_tx.fa'
-    output: directory('data/salmon_indices/gencode_comp_ano')
+    input: 'data/seqs/{build}_tx.fa'
+    output: directory('data/salmon_indices/{build}')
     shell:
         '''
         module load {salmon_version}
@@ -201,12 +210,12 @@ rule build_salmon_index:
 rule run_salmon:
     input: 
         fastqs=lambda wildcards: [sr_fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.sampleID),sr_fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.sampleID)] if sr_sample_dict[wildcards.sampleID]['paired'] else sr_fql+'fastq_files/{}.fastq.gz'.format(wildcards.sampleID),
-        index='data/salmon_indices/gencode_comp_ano'
+        index='data/salmon_indices/{build}'
     params: 
         cmd=lambda wildcards: salmon_input(wildcards.sampleID,sr_sample_dict,sr_fql),\
-        outdir=lambda wildcards: f'data/salmon_quant/{ wildcards.sampleID}/'
+        outdir=lambda wildcards: f'data/salmon_quant/{wildcards.build}/{ wildcards.sampleID}/'
     output: 
-        'data/salmon_quant/{sampleID}/quant.sf'
+        'data/salmon_quant/{build}/{sampleID}/quant.sf'
     shell:
         '''
         id={wildcards.sampleID}
@@ -471,14 +480,14 @@ rule train_doc2vec_and_infer_vectors:
         full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
         val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
         val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
+    params:
+        model= lambda wildcards:  f'data/{wildcards.type}_set/embedding_models/all_RPE_doc2vec_ep-15_dm-{wildcards.dm}_wc-{wildcards.wc}_kmers-{wildcards.size}_dims-{wildcards.dims}.pymodel'
     output: 
         out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
-        val_matrix = 'data/{type}_set/embedded_model_data/all_RPE_validation-tx_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
-        model = 'data/{type}_set/embedding_models/all_RPE_doc2vec_ep-15_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.pymodel'
+        val_matrix = 'data/{type}_set/embedded_model_data/all_RPE_validation-tx_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz'
         
     shell:
         '''
-
         python3 scripts/train_doc2vec.py \
             --corpusFile {input.full_lsf} \
             --corpusTxIDs {input.full_txids} \
@@ -487,10 +496,10 @@ rule train_doc2vec_and_infer_vectors:
             --edim {wildcards.dims} \
             --wc {wildcards.wc} \
             --dm {wildcards.dm} \
-            --trainedModel {output.model} \
+            --trainedModel {params.model} \
+            --loadModel \
             --outTrainMatrix {output.out_matrix} \
             --outValMatrix {output.val_matrix}
-
         '''
 
 
@@ -506,7 +515,8 @@ rule run_experiment:
         python3 scripts/run_models.py \
             --workingDir {working_dir} \
             --inputFile {input.out_matrix} \
-            --inputType skl \
+            --inputType skl-bal \
+            --model random_forest \
             --nproc 32 \
             --outputDir {params.out_dir}
     
