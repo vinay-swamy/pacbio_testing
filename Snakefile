@@ -102,14 +102,15 @@ rule all:
     #input:'data/gtf_info/all_RPE_loose_detdf.tsv.gz'
     #input:expand('data/stringtie_superread/{sample}.gtf', sample=[sample for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'])
     input: #expand('results/all_{tissue}.merged.gtf', tissue=tissues)
-        expand(
-            'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
-            dm=['0','1'],
-            wc=['3','15','30'],
-            size=['10', '12', '16', '20'], 
-            dims=['100', '200', '300']),
-        expand('data/salmon_quant/all_RPE_loose/{sampleID}/quant.sf', sampleID=sr_sample_names)
-    #     expand('data/gtf_info/all_RPE_{type}_target_tx.tsv', type=['strict', 'loose']),
+         'data/combined_gtfs/all_RPE_loose.combined.gtf'
+        # expand(
+        #     'data/loose_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv', 
+        #     dm=['0','1'],
+        #     wc=['3','15','30'],
+        #     size=['10', '12', '16', '20'], 
+        #     dims=['100', '200', '300']),
+        # expand('data/salmon_quant/all_RPE_loose/{sampleID}/quant.sf', sampleID=sr_sample_names),
+        #  expand('data/gtf_info/all_RPE_{type}_target_tx.tsv', type=['strict', 'loose']),
          
         
 
@@ -136,92 +137,98 @@ def get_sr_fq_cmd(sample,fql, sample_dict):
         cmd = f'-U {up}'
     return cmd 
 
-rule make_super_read_gtfs:
-    input:
-        fastqs=lambda wildcards: [sr_fql + f'fastq_files/{wildcards.sample}_1.fastq.gz', sr_fql + f'fastq_files/{wildcards.sample}_2.fastq.gz'] if sr_sample_dict[wildcards.sample]['paired'] else sr_fql + f'fastq_files/{wildcards.sample}.fastq.gz'
-    params:
-        fq_cmd= lambda wildcards: get_sr_fq_cmd(wildcards.sample, sr_fql, sr_sample_dict)
-    output: 
-        super_read_bam='bams/{sample}/sr_sort.bam', 
-        gtf = 'data/stringtie_superread/{sample}.gtf'
-    shell:
-        '''
-        module load singularity
-        singularity exec --bind /data/swamyvs/,/data/OGVFB_BG/ /data/swamyvs/singularity_images/stringtie2.sif \
-            python2 /stringtie/SuperReads_RNA/create_rna_sr.py \
-                -p 32  \
-                {params.fq_cmd}  \
-                -H ref/hisat2_index \
-                -g /data/swamyvs/pacbio_testing/ \
-                -G ref/gmap_index/gencode/  \
-                --hisat2-cmd "/hisat2-2.2.0/hisat2" \
-                --out-dir /data/swamyvs/pacbio_testing/bams/{wildcards.sample}/ 
-        module load {stringtie_version}
-        stringtie {output.super_read_bam} -o {output.gtf} -l stsr_{wildcards.sample} -p 32 -G {ref_GTF}
-        '''
+# rule make_super_read_gtfs:
+#     input:
+#         fastqs=lambda wildcards: [sr_fql + f'fastq_files/{wildcards.sample}_1.fastq.gz', sr_fql + f'fastq_files/{wildcards.sample}_2.fastq.gz'] if sr_sample_dict[wildcards.sample]['paired'] else sr_fql + f'fastq_files/{wildcards.sample}.fastq.gz'
+#     params:
+#         fq_cmd= lambda wildcards: get_sr_fq_cmd(wildcards.sample, sr_fql, sr_sample_dict)
+#     output: 
+#         super_read_bam='bams/{sample}/sr_sort.bam', 
+#         gtf = 'data/stringtie_superread/{sample}.gtf'
+#     shell:
+#         '''
+#         module load singularity
+#         singularity exec --bind /data/swamyvs/,/data/OGVFB_BG/ /data/swamyvs/singularity_images/stringtie2.sif \
+#             python2 /stringtie/SuperReads_RNA/create_rna_sr.py \
+#                 -p 32  \
+#                 {params.fq_cmd}  \
+#                 -H ref/hisat2_index \
+#                 -g /data/swamyvs/pacbio_testing/ \
+#                 -G ref/gmap_index/gencode/  \
+#                 --hisat2-cmd "/hisat2-2.2.0/hisat2" \
+#                 --out-dir /data/swamyvs/pacbio_testing/bams/{wildcards.sample}/ 
+#         module load {stringtie_version}
+#         stringtie {output.super_read_bam} -o {output.gtf} -l stsr_{wildcards.sample} -p 32 -G {ref_GTF}
+#         '''
 
 
 
-rule basic_filter_stringtie:
-    input:'data/stringtie/{sample}.gtf'
-    output:'data/stringtie_filtered/{sample}.gtf'
-    shell:
-        '''
-        module load {stringtie_version}
-        stringtie --merge -o {output} -F 1 -T 1 -l stf_{wildcards.sample} {input}
-        '''
+# rule basic_filter_stringtie:
+#     input:'data/stringtie/{sample}.gtf'
+#     output:'data/stringtie_filtered/{sample}.gtf'
+#     shell:
+#         '''
+#         module load {stringtie_version}
+#         stringtie --merge -o {output} -F 1 -T 1 -l stf_{wildcards.sample} {input}
+#         '''
 
-rule run_scallop:
-    input: bam_path + 'STARbams/{sample}/Sorted.out.bam'
-    params: pfx = lambda wildcards: f'data/scallop/{wildcards.sample}'
-    output: 'data/scallop/{sample}.gtf'
-    shell:
-        '''
-        module load {scallop_version}
-        scallop -i {input} -o /tmp/{wildcards.sample}
-        module load gffcompare
-        gffcompare -p sp_{wildcards.sample} -o {params.pfx} /tmp/{wildcards.sample}
-        '''
+# rule run_scallop:
+#     input: bam_path + 'STARbams/{sample}/Sorted.out.bam'
+#     params: pfx = lambda wildcards: f'data/scallop/{wildcards.sample}'
+#     output: 'data/scallop/{sample}.gtf'
+#     shell:
+#         '''
+#         module load {scallop_version}
+#         scallop -i {input} -o /tmp/{wildcards.sample}
+#         module load gffcompare
+#         gffcompare -p sp_{wildcards.sample} -o {params.pfx} /tmp/{wildcards.sample}
+#         '''
 
 
 
 ### get reference transcript quantification
-rule make_tx_fasta:
-    input:
-        gtf=lambda wildcards: build2gtf(wildcards.build)
-    output: 
-        'data/seqs/{build}_tx.fa'
-    shell:
-        '''
-        {bam_path}/gffread/gffread -w {output} -g {ref_genome}  {input.gtf}
-        '''
+# rule make_tx_fasta:
+#     input:
+#         gtf=lambda wildcards: build2gtf(wildcards.build)
+#     output: 
+#         'data/seqs/{build}_tx.fa'
+#     shell:
+#         '''
+#         {bam_path}/gffread/gffread -w {output} -g {ref_genome}  {input.gtf}
+#         '''
 
 
 
-rule build_salmon_index:
-    input: 'data/seqs/{build}_tx.fa'
-    output: directory('data/salmon_indices/{build}')
-    shell:
-        '''
-        module load {salmon_version}
-        salmon index -t {input} -i {output} 
-        '''
+# rule build_salmon_index:
+#     input: 
+#         'data/seqs/{build}_tx.fa'
+#     params:
+#         tmp_dir = lambda wildcards: f'testing/salmon_tmp_{wildcards.build}/'
+#     output: 
+#         directory('data/salmon_indices/{build}')
+#     shell:
+#         '''
+#         rm -rf {params.tmp_dir}
+#         mkdir -p {params.tmp_dir}
+#         module load {salmon_version}
+#         salmon index -t {input} --tmpdir {params.tmp_dir} -i {output} 
+#         '''
 
-rule run_salmon:
-    input: 
-        fastqs=lambda wildcards: [sr_fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.sampleID),sr_fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.sampleID)] if sr_sample_dict[wildcards.sampleID]['paired'] else sr_fql+'fastq_files/{}.fastq.gz'.format(wildcards.sampleID),
-        index='data/salmon_indices/{build}'
-    params: 
-        cmd=lambda wildcards: salmon_input(wildcards.sampleID,sr_sample_dict,sr_fql),\
-        outdir=lambda wildcards: f'data/salmon_quant/{wildcards.build}/{ wildcards.sampleID}/'
-    output: 
-        'data/salmon_quant/{build}/{sampleID}/quant.sf'
-    shell:
-        '''
-        id={wildcards.sampleID}
-        module load {salmon_version}
-        salmon quant -p 8 -i {input.index} -l A --gcBias --seqBias  --validateMappings {params.cmd} -o {params.outdir}
-        '''
+# rule run_salmon:
+#     input: 
+#         fastqs=lambda wildcards: [sr_fql+'fastq_files/{}_1.fastq.gz'.format(wildcards.sampleID),sr_fql+'fastq_files/{}_2.fastq.gz'.format(wildcards.sampleID)] if sr_sample_dict[wildcards.sampleID]['paired'] else sr_fql+'fastq_files/{}.fastq.gz'.format(wildcards.sampleID),
+#         index='data/salmon_indices/{build}'
+#     params: 
+#         cmd=lambda wildcards: salmon_input(wildcards.sampleID,sr_sample_dict,sr_fql),\
+#         outdir=lambda wildcards: f'data/salmon_quant/{wildcards.build}/{ wildcards.sampleID}/'
+#     output: 
+#         'data/salmon_quant/{build}/{sampleID}/quant.sf'
+#     shell:
+#         '''
+#         id={wildcards.sampleID}
+#         module load {salmon_version}
+#         salmon quant -p 8 -i {input.index} -l A --gcBias --seqBias  --validateMappings {params.cmd} -o {params.outdir}
+#         '''
 
 
 
@@ -386,9 +393,9 @@ rule run_talon:
 rule merge_all_gtfs:
     input: 
         stringtie_gtfs=[f'data/stringtie/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
-        stringtie_sr = [f'data/stringtie_superread/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
-        stringtie_filt = [f'data/stringtie_filtered/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
-        scallop_gtfs = [f'data/scallop/{sample}.combined.gtf' for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
+        #stringtie_sr = [f'data/stringtie_superread/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
+        #stringtie_filt = [f'data/stringtie_filtered/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
+        #scallop_gtfs = [f'data/scallop/{sample}.combined.gtf' for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE'],
         lr_gtfs = expand('data/talon_results/{tissue}/{tissue}_talon_observedOnly.gtf', tissue=subtissues)
     params: 
             prefix = lambda wildcards: f'data/combined_gtfs/all_RPE_{wildcards.type}',
@@ -400,127 +407,132 @@ rule merge_all_gtfs:
         '''
         module load {gffcompare_version}
         gffcompare {params.flag}  -r {ref_GTF} -o {params.prefix} {input.stringtie_gtfs} {input.scallop_gtfs} {input.stringtie_filt} {input.stringtie_sr} {input.lr_gtfs}
-        '''
+         '''
 
-
-rule merge_all_with_filt:
-    input: 
-        all='data/combined_gtfs/all_RPE_loose.combined.gtf', 
-        filt= [f'data/stringtie_filtered/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE']
-    output: 
-        'data/combined_gtfs/all_RPE_loose_wfilter.combined.gtf'
-    shell:
-        '''
-        module load {gffcompare_version}
-        gffcompare  -r {ref_GTF} -o data/combined_gtfs/all_RPE_loose_wfilter {input.all} {input.filt}
-        '''
-
-
-
-rule extract_gtf_info:
-    input:
-        gtf='data/combined_gtfs/all_RPE_{type}.combined.gtf',
-        track_file='data/combined_gtfs/all_RPE_{type}.tracking',
-        abundance_file='data/talon_results/RPE_Fetal.Tissue/RPE_Fetal.Tissue_talon_abundance.tsv'
-    params:
-        out_prefix='data/gtf_info/all_RPE_{type}'
-    output:
-        convtab = 'data/gtf_info/all_RPE_{type}_convtab.tsv.gz',
-        det_df = 'data/gtf_info/all_RPE_{type}_detdf.tsv.gz',
-        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv',
-        validaion_tx = 'data/gtf_info/all_RPE_{type}_validation_tx.tsv'
-    shell:
-        '''
-        module load R
-        Rscript scripts/clean_track_file.R \
-            --workingDir {working_dir} \
-            --rawTrackFile {input.track_file} \
-            --refGtfFile {ref_GTF} \
-            --gtfFile {input.gtf} \
-            --uniprotFile {uniprot_file} \
-            --talonAbFile {input.abundance_file} \
-            --outPfx {params.out_prefix}
-
-        '''
+# moved this 
+        # '''
+        # module load {gffcompare_version}
+        # gffcompare {params.flag}  -r {ref_GTF} -o {params.prefix} {input.stringtie_gtfs} {input.scallop_gtfs} {input.stringtie_filt} {input.stringtie_sr} {input.lr_gtfs}
+        #  '''
+# rule merge_all_with_filt:
+#     input: 
+#         all='data/combined_gtfs/all_RPE_loose.combined.gtf', 
+#         filt= [f'data/stringtie_filtered/{sample}.gtf'for sample in sr_sample_names if sr_sample_dict[sample]['origin'] == 'true_RPE']
+#     output: 
+#         'data/combined_gtfs/all_RPE_loose_wfilter.combined.gtf'
+#     shell:
+#         '''
+#         module load {gffcompare_version}
+#         gffcompare  -r {ref_GTF} -o data/combined_gtfs/all_RPE_loose_wfilter {input.all} {input.filt}
+#         '''
 
 
 
-rule kmerize_transcripts:
-    input: 
-        fasta='data/seqs/all_RPE_{type}_tx.fa',
-        target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv',
-        validaion_tx = 'data/gtf_info/all_RPE_{type}_validation_tx.tsv'
-    params:
-        out_prefix = lambda wildcards: f'data/{wildcards.type}_set/raw_model_data/all_RPE_kmers_{wildcards.size}'
-    output:  
-        full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train.lsf', 
-        full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
-        val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
-        val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
-    shell:
-        '''
-        python3  scripts/kmerize_fasta_low_mem.py \
-            --infasta {input.fasta} \
-            --kmerSize {wildcards.size} \
-            --trainTx {input.target_tx} \
-            --valTx {input.validaion_tx} \
-            --outPfx {params.out_prefix}
+# rule extract_gtf_info:
+#     input:
+#         gtf='data/combined_gtfs/all_RPE_{type}.combined.gtf',
+#         track_file='data/combined_gtfs/all_RPE_{type}.tracking',
+#         abundance_file='data/talon_results/RPE_Fetal.Tissue/RPE_Fetal.Tissue_talon_abundance.tsv'
+#     params:
+#         out_prefix='data/gtf_info/all_RPE_{type}'
+#     output:
+#         convtab = 'data/gtf_info/all_RPE_{type}_convtab.tsv.gz',
+#         det_df = 'data/gtf_info/all_RPE_{type}_detdf.tsv.gz',
+#         target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv',
+#         validaion_tx = 'data/gtf_info/all_RPE_{type}_validation_tx.tsv'
+#     shell:
+#         '''
+#         module load R
+#         Rscript scripts/clean_track_file.R \
+#             --workingDir {working_dir} \
+#             --rawTrackFile {input.track_file} \
+#             --refGtfFile {ref_GTF} \
+#             --gtfFile {input.gtf} \
+#             --uniprotFile {uniprot_file} \
+#             --talonAbFile {input.abundance_file} \
+#             --outPfx {params.out_prefix}
+
+#         '''
+
+
+
+# rule kmerize_transcripts:
+#     input: 
+#         fasta='data/seqs/all_RPE_{type}_tx.fa',
+#         target_tx = 'data/gtf_info/all_RPE_{type}_target_tx.tsv',
+#         validaion_tx = 'data/gtf_info/all_RPE_{type}_validation_tx.tsv'
+#     params:
+#         out_prefix = lambda wildcards: f'data/{wildcards.type}_set/raw_model_data/all_RPE_kmers_{wildcards.size}'
+#     output:  
+#         full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train.lsf', 
+#         full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
+#         val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
+#         val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
+#     shell:
+#         '''
+#         python3  scripts/kmerize_fasta_low_mem.py \
+#             --infasta {input.fasta} \
+#             --kmerSize {wildcards.size} \
+#             --trainTx {input.target_tx} \
+#             --valTx {input.validaion_tx} \
+#             --outPfx {params.out_prefix}
            
-        '''
+#         '''
 
 
-'''
-03/11/20 changed so we are training on only the target tx, maybe this will help thigns 
-q
-'''
+# '''
+# 03/11/20 changed so we are training on only the target tx, maybe this will help thigns 
+# q
+# '''
 
-rule train_doc2vec_and_infer_vectors:
-    input: 
-        full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train.lsf', 
-        full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
-        val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
-        val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
-    params:
-        model= lambda wildcards:  f'data/{wildcards.type}_set/embedding_models/all_RPE_doc2vec_ep-15_dm-{wildcards.dm}_wc-{wildcards.wc}_kmers-{wildcards.size}_dims-{wildcards.dims}.pymodel'
-    output: 
-        out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
-        val_matrix = 'data/{type}_set/embedded_model_data/all_RPE_validation-tx_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz'
+# rule train_doc2vec_and_infer_vectors:
+#     input: 
+#         full_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train.lsf', 
+#         full_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_train_txids.txt',
+#         val_lsf = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val.lsf', 
+#         val_txids = 'data/{type}_set/raw_model_data/all_RPE_kmers_{size}_val_txids.txt'
+#     params:
+#         model= lambda wildcards:  f'data/{wildcards.type}_set/embedding_models/all_RPE_doc2vec_ep-15_dm-{wildcards.dm}_wc-{wildcards.wc}_kmers-{wildcards.size}_dims-{wildcards.dims}.pymodel'
+#     output: 
+#         out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz',
+#         val_matrix = 'data/{type}_set/embedded_model_data/all_RPE_validation-tx_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz'
         
-    shell:
-        '''
-        python3 scripts/train_doc2vec.py \
-            --corpusFile {input.full_lsf} \
-            --corpusTxIDs {input.full_txids} \
-            --valTxLsf {input.val_lsf} \
-            --valTxIDs {input.val_txids}\
-            --edim {wildcards.dims} \
-            --wc {wildcards.wc} \
-            --dm {wildcards.dm} \
-            --trainedModel {params.model} \
-            --loadModel \
-            --outTrainMatrix {output.out_matrix} \
-            --outValMatrix {output.val_matrix}
-        '''
+#     shell:
+#         '''
+#         python3 scripts/train_doc2vec.py \
+#             --corpusFile {input.full_lsf} \
+#             --corpusTxIDs {input.full_txids} \
+#             --valTxLsf {input.val_lsf} \
+#             --valTxIDs {input.val_txids}\
+#             --edim {wildcards.dims} \
+#             --wc {wildcards.wc} \
+#             --dm {wildcards.dm} \
+#             --trainedModel {params.model} \
+#             --loadModel \
+#             --outTrainMatrix {output.out_matrix} \
+#             --outValMatrix {output.val_matrix}
+#         '''
 
 
-rule run_experiment:
-    input:
-        out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz'
-    params:
-        out_dir = lambda wildcards: f'data/{wildcards.type}_set/model_results/all_RPE_dm-{wildcards.dm}_wc-{wildcards.wc}_kmers-{wildcards.size}_dims-{wildcards.dims}/'
-    output:
-        out_csv = 'data/{type}_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv'
-    shell:
-        '''
-        python3 scripts/run_models.py \
-            --workingDir {working_dir} \
-            --inputFile {input.out_matrix} \
-            --inputType skl-bal \
-            --model random_forest \
-            --nproc 32 \
-            --outputDir {params.out_dir}
+# rule run_experiment:
+#     input:
+#         out_matrix = 'data/{type}_set/embedded_model_data/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}.csv.gz'
+#     params:
+#         out_dir = lambda wildcards: f'data/{wildcards.type}_set/model_results/all_RPE_dm-{wildcards.dm}_wc-{wildcards.wc}_kmers-{wildcards.size}_dims-{wildcards.dims}/'
+#     output:
+#         out_csv = 'data/{type}_set/model_results/all_RPE_dm-{dm}_wc-{wc}_kmers-{size}_dims-{dims}/model_results.csv'
+#     shell:
+#         '''
+#         python3 scripts/run_models.py \
+#             --workingDir {working_dir} \
+#             --inputFile {input.out_matrix} \
+#             --labFile data/loose_set/all_RPE_loose_labels.csv  \
+#             --inputType skl \
+#             --model rf,rf_weighted \
+#             --nproc 32 \
+#             --outputDir {params.out_dir}
     
-        '''
+#         '''
 
 
 

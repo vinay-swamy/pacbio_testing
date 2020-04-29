@@ -3,66 +3,21 @@ import pandas as pd
 import numpy as np
 import pathlib
 import glob
-from class_defs import SklDataObj, TfDataObj
+from class_defs import SklDataObj
 from functools import reduce 
 #%%
-def split_data_into_subsets(obj_class, X_df, labs, X_df_val, val_labs, data_name, prefix='_dataset='):
+def split_data_into_subsets( X_df, labs, data_name, prefix='_subset-'):
     stringtie_cases=['all', 'stringtie', 'stringtie-pacbio','stringtie-scallop']
     scallop_cases=['all', 'scallop', 'scallop-pacbio','stringtie-scallop']
-    labdf_all = labs.drop(['is_ism'], axis=1)
-    labdf_stringtie = labdf_all[labdf_all.intersection_case.isin(stringtie_cases)].reset_index(drop=True)
-    labdf_scallop = labdf_all[labdf_all.intersection_case.isin(scallop_cases)].reset_index(drop=True)
-    labdf_no_ism=labs[labs.is_ism == 'not_ism'].drop(['is_ism'], axis=1).reset_index(drop=True)
-
-    labdf_fam = (val_labs[val_labs['family'].isin(["krueppel_c2h2-type_zinc-finger_protein_family","g-protein_coupled_receptor_1_family"  ])] 
-            .assign(target_label=lambda x: np.where(x['family'] == "g-protein_coupled_receptor_1_family", 1, 0 ) )
-            .reset_index(drop=True))
-
-    obj_list=[obj_class(data_name + prefix +'all',X_df, labdf_all, 'transcript', 'not_transcript'),
-                obj_class(data_name+  prefix +'stringtie', X_df, labdf_stringtie, 'transcript', 'not_transcript'),
-                obj_class(data_name+ prefix +'scallop', X_df, labdf_scallop, 'transcript', 'not_transcript'),
-                obj_class(data_name+ prefix +'not-ism', X_df, labdf_no_ism,  'transcript', 'not_transcript'),
-                obj_class(data_name+ prefix +'fam', X_df_val, labdf_fam,  'gprotein', 'zincfinger')
+    labdf_stringtie = labs[labs.intersection_case.isin(stringtie_cases)].reset_index(drop=True)
+    labdf_scallop = labs[labs.intersection_case.isin(scallop_cases)].reset_index(drop=True)
+    obj_list=[SklDataObj(data_name + prefix +'all',X_df, labs, 'transcript', 'not_transcript', simple_name='all'),
+                SklDataObj(data_name+  prefix +'stringtie', X_df, labdf_stringtie, 'transcript', 'not_transcript', simple_name='stringtie'),
+                SklDataObj(data_name+ prefix +'scallop', X_df, labdf_scallop, 'transcript', 'not_transcript', simple_name='scallop')
         ]
     return obj_list
 
 
-
-def load_bsp_data(X_file_name, lab_file, run_selection='all', balance_data=False):
-    fn=X_file_name.split('/')[-1]
-    dm=int(fn.split('_')[2].split('-')[1])
-    wc=int(fn.split('_')[3].split('-')[1])
-    kmer_size=int(fn.split('_')[4].split('-')[1])
-    edim=int(fn.split('_')[5].split('-')[1].split('.')[0] )
-    #print([dm, wc, kmer_size, edim])
-    fstem='/'.join(X_file_name.split('/')[:-1]) +'/'
-    val_xfile=fn.split('_')
-    val_xfile= fstem+ '_'.join(val_xfile[:2])+'_validation-tx_' + '_'.join(val_xfile[2:])
-    val_labfile = 'data/gtf_info/all_RPE_loose_validation_tx.tsv'
-    #lab_file='data/gtf_info/all_RPE_loose_target_tx.tsv'
-    data_name=f'dm-{dm}_wc-{wc}_kmer-{str(kmer_size)}_edim-{str(edim)}'
-    #pathlib.Path(out_dir).mkdir(exist_ok=True,parents=True)
-    all_positive_cases=['all', 'stringtie-pacbio', 'scallop-pacbio']
-
-    X_df=pd.read_csv(X_file_name,names=['transcript_id']+ list(range(edim)))
-    labs=(pd
-        .read_csv(lab_file, sep= '\t')
-        .assign(target_label=lambda x: np.where(x['intersection_case'].isin(all_positive_cases),1,0 )))
-    X_df_val=pd.read_csv(val_xfile,names=['transcript_id']+ list(range(edim)))
-    val_labs=pd.read_csv(val_labfile, sep='\t')
-    if run_selection == 'all':
-        prefix='_dataset='
-    else:
-        prefix=''
-        data_name = ''
-    skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name, prefix=prefix)
-    if balance_data:
-        num_real_tx = sum(labs['target_label'] == 0)
-        bal_labs = pd.concat([ labs[labs['target_label'] == 0].sample(num_real_tx),
-                             labs[labs['target_label'] == 1]], ignore_index=True )
-        skl_objs+= split_data_into_subsets(SklDataObj,X_df, bal_labs, X_df_val, val_labs, data_name+'-bal', prefix=prefix)
-
-    return skl_objs
 
 
 def load_snakemake_data(X_file_name, lab_file, run_selection='all', balance_data=False):
@@ -73,9 +28,6 @@ def load_snakemake_data(X_file_name, lab_file, run_selection='all', balance_data
     edim=int(fn.split('_')[5].split('-')[1].split('.')[0] )
     #print([dm, wc, kmer_size, edim])
     fstem='/'.join(X_file_name.split('/')[:-1]) +'/'
-    val_xfile=fn.split('_')
-    val_xfile= fstem+ '_'.join(val_xfile[:2])+'_validation-tx_' + '_'.join(val_xfile[2:])
-    val_labfile = 'data/gtf_info/all_RPE_loose_validation_tx.tsv'
     #lab_file='data/gtf_info/all_RPE_loose_target_tx.tsv'
     data_name=f'dm-{dm}_wc-{wc}_kmer-{str(kmer_size)}_edim-{str(edim)}'
     #pathlib.Path(out_dir).mkdir(exist_ok=True,parents=True)
@@ -83,21 +35,18 @@ def load_snakemake_data(X_file_name, lab_file, run_selection='all', balance_data
 
     X_df=pd.read_csv(X_file_name,names=['transcript_id']+ list(range(edim)))
     labs=(pd
-        .read_csv(lab_file, sep= '\t')
-        .assign(target_label=lambda x: np.where(x['intersection_case'].isin(all_positive_cases),1,0 )))
-    X_df_val=pd.read_csv(val_xfile,names=['transcript_id']+ list(range(edim)))
-    val_labs=pd.read_csv(val_labfile, sep='\t')
-    if run_selection == 'all':
-        prefix='_dataset='
-    else:
-        prefix=''
-        data_name = ''
-    skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name, prefix=prefix)
-    if balance_data:
-        num_real_tx = sum(labs['target_label'] == 0)
-        bal_labs = pd.concat([ labs[labs['target_label'] == 0].sample(num_real_tx),
-                             labs[labs['target_label'] == 1]], ignore_index=True )
-        skl_objs+= split_data_into_subsets(SklDataObj,X_df, bal_labs, X_df_val, val_labs, data_name+'-bal', prefix=prefix)
+        .read_csv(lab_file)
+        .assign(target_label=lambda x: np.where(x['label_all'] == 'transcript',1,0 )))
+    sel_cols = ['transcript_id', 'intersection_case', 'target_label']
+    labs_all = labs[sel_cols]
+    labs_longer1000 = labs[labs['longer_1000']].loc[:,sel_cols]
+    labs_longer2000 = labs[labs['longer_2000']].loc[:,sel_cols]
+    labs_st_thresh = labs[labs['st_threshold']].loc[:,sel_cols]
+    skl_objs = split_data_into_subsets(X_df, labs_all, data_name+'_subset-all') +\
+                split_data_into_subsets(X_df, labs_longer1000, data_name+'_subset-1000+') +\
+                split_data_into_subsets(X_df, labs_longer2000, data_name+'_subset-200+') +\
+                split_data_into_subsets(X_df, labs_st_thresh, data_name+'_subset-stTPM')
+                
 
     return skl_objs
 
@@ -270,16 +219,4 @@ def load_merge(lab_file, data_name, return_df=False, run_selection = 'all'):
         data_name = ''
     skl_objs= split_data_into_subsets(SklDataObj, X_df, labs, X_df_val, val_labs, data_name, prefix=prefix)
     return skl_objs
-
-
-def load_merge_tf(lab_file, data_name ):
-    all_positive_cases=['all', 'stringtie-pacbio', 'scallop-pacbio']
-    X_df, X_df_val = load_merge(lab_file, data_name, return_df=True)
-    labs=(pd
-        .read_csv(lab_file, sep= '\t')
-        .assign(target_label=lambda x: np.where(x['intersection_case'].isin(all_positive_cases),1,0 )))
-    val_labfile = '/data/swamyvs/pacbio_testing/data/gtf_info/all_RPE_loose_validation_tx.tsv'
-    val_labs=pd.read_csv(val_labfile, sep='\t')
-    tf_objs = split_data_into_subsets(TfDataObj, X_df, labs, X_df_val, val_labs, data_name='', prefix='')
-    return tf_objs
 

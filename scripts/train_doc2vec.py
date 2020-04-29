@@ -7,6 +7,7 @@ import logging
 import argparse
 import gzip
 import numpy as np 
+import os
 from concurrent.futures import ProcessPoolExecutor
 
 
@@ -20,6 +21,7 @@ required.add_argument('--valTxIDs', action  ='store', dest = 'val_txid_file')
 required.add_argument('--edim', help='size of kmer',  type=int )
 required.add_argument('--wc', help='size of kmer',  type=int )
 required.add_argument('--dm', help='size of kmer',  type=int )
+required.add_argument('--loadModel',action='store_true', dest = 'load_model' )
 required.add_argument('--trainedModel', help='output file for lsf kmers', dest='out_model_file')
 required.add_argument('--outTrainMatrix', action = 'store', dest='train_matrix_file')
 required.add_argument('--outValMatrix', action = 'store', dest='val_matrix_file')
@@ -28,7 +30,7 @@ required.add_argument('--outValMatrix', action = 'store', dest='val_matrix_file'
 
 args=parser.parse_args()
 
-
+os.chdir('/data/swamyvs/pacbio_testing/')
 
 
 logging.basicConfig(format='%(levelname)s : %(message)s', level=logging.INFO)
@@ -38,12 +40,15 @@ logging.root.level = logging.INFO
 NCORES = 64
 
 #PV-DM == skipgram == `dm=0`
-print('training')
-
-model = Doc2Vec(corpus_file=args.corpus_file, dm= args.dm, vector_size=args.edim, min_count=args.wc, epochs=15, seed=42, workers=NCORES)
-model.delete_temporary_training_data(keep_doctags_vectors=False, keep_inference=True)
-model.save(args.out_model_file)
-print('saved')
+if args.load_model:
+    print('loading_model') 
+    model = Doc2Vec.load(args.out_model_file)
+else:
+    print('training')
+    model = Doc2Vec(corpus_file=args.corpus_file, dm= args.dm, vector_size=args.edim, min_count=args.wc, epochs=15, seed=42, workers=NCORES)
+    model.delete_temporary_training_data(keep_doctags_vectors=False, keep_inference=True)
+    model.save(args.out_model_file)
+    print('saved')
 
 
 ## paralell process without loading into memory
@@ -100,6 +105,7 @@ def single_process_infer_vector(corpus_file, out_matrix_file, corpus_txid_file):
                     res=wrap_infer(word_vec)
                     out_mat.write(','.join(res) + '\n')
 
+print('\ninfering\n')
 multiprocess_infer_vectors(args.corpus_file,args.train_matrix_file, args.corpus_txid_file, NCORES)
 single_process_infer_vector(args.val_tx_lsf, args.val_matrix_file, args.val_txid_file)
 

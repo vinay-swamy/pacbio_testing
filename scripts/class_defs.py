@@ -2,7 +2,7 @@
 from functools import partial
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve, precision_recall_curve, auc
-from keras.utils import to_categorical
+# from keras.utils import to_categorical
 import pickle
 import numpy as np
 import pandas as pd
@@ -98,6 +98,13 @@ def model_results(obj,Y_true, Y_pred_class, Y_pred_prob, data_name, outdir):
 
 
 
+# class GeneratorDataObj:
+#     def __init__(self, name, train, val, test, par_dict )
+#         self.train = train
+#         self.test = test 
+#         self.val = val 
+#         self.par_dict = par_dict
+#         self.name = val;
 
 
 class DataObj:
@@ -112,7 +119,7 @@ class DataObj:
 
 
 class SklDataObj:
-    def __init__(self,name, X_df, labs, one_label, zero_label):
+    def __init__(self,name, X_df, labs, one_label, zero_label, simple_name=None):
         X_df_labeled=pd.merge(left=labs, how='inner', right=X_df, left_on='transcript_id', right_on='transcript_id')
         #assert X_df.shape[0]  == X_df_labeled.shape[0] # make sure number of rows match 
         X_data=np.asarray(X_df_labeled.iloc[:,3:])#drop the first 3 columns
@@ -124,6 +131,10 @@ class SklDataObj:
         DataObj.__init__(self,name, X_train, Y_train, X_test, Y_test)
         self.one_label=one_label
         self.zero_label=zero_label
+        if simple_name is not None:
+            self.simple_name = simple_name
+        else:
+            self.simple_name = None
     def summary(self):
         tr_len=len(self.X_train)
         ts_len=len(self.X_test)
@@ -132,21 +143,21 @@ class SklDataObj:
         print(f'{self.one_label} count: {np.count_nonzero(self.vec_y == 1)}\n{self.zero_label} count : {np.count_nonzero(self.vec_y == 0)}')
 
 
-class TfDataObj:
-    def __init__(self, name ,X_df, labs, one_label, zero_label):
-        assert labs.shape[1] == 3 #
-        X_df_labeled=pd.merge(left=labs, right=X_df, left_on='transcript_id', right_on='transcript_id')
-        X_data=np.asarray(X_df_labeled.iloc[:,3:])#drop the first 3 columns
-        Y_vec=np.asarray(X_df_labeled['target_label'])
-        X_train, X_val, Y_train_labs, Y_val_labs= train_test_split(X_data,labs,test_size=.2, random_state=42, stratify=Y_vec)
-        X_train, X_test, Y_train_labs, Y_test_labs=train_test_split(X_train,Y_train_labs,test_size=.2, 
-                                                                                  random_state=42,stratify=Y_train_labs['target_label'])
-        Y_val=to_categorical(Y_val_labs['target_label'])
-        Y_train=to_categorical(Y_train_labs['target_label'])
-        Y_test=to_categorical(Y_test_labs['target_label'])
-        DataObj.__init__(self, name, X_train,Y_train,X_test, Y_test,  X_val ,Y_val)
-        self.one_label=one_label
-        self.zero_label=zero_label
+# class TfDataObj:
+#     def __init__(self, name ,X_df, labs, one_label, zero_label):
+#         assert labs.shape[1] == 3 #
+#         X_df_labeled=pd.merge(left=labs, right=X_df, left_on='transcript_id', right_on='transcript_id')
+#         X_data=np.asarray(X_df_labeled.iloc[:,3:])#drop the first 3 columns
+#         Y_vec=np.asarray(X_df_labeled['target_label'])
+#         X_train, X_val, Y_train_labs, Y_val_labs= train_test_split(X_data,labs,test_size=.2, random_state=42, stratify=Y_vec)
+#         X_train, X_test, Y_train_labs, Y_test_labs=train_test_split(X_train,Y_train_labs,test_size=.2, 
+#                                                                                   random_state=42,stratify=Y_train_labs['target_label'])
+#         Y_val=to_categorical(Y_val_labs['target_label'])
+#         Y_train=to_categorical(Y_train_labs['target_label'])
+#         Y_test=to_categorical(Y_test_labs['target_label'])
+#         DataObj.__init__(self, name, X_train,Y_train,X_test, Y_test,  X_val ,Y_val)
+#         self.one_label=one_label
+#         self.zero_label=zero_label
 
 class Experiment:
     def __init__(self, obj_list,model_dict, outdir, save_probs=False, save_cm=False):
